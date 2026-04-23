@@ -32,6 +32,7 @@ export const CONFIG = {
   GITHUB_PAT: process.env.GITHUB_PAT,
   GITHUB_USER: process.env.GITHUB_USER || 'puckemerson',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  REPLICATE_API_KEY: process.env.REPLICATE_API_KEY,
   LLM_MODEL: process.env.LLM_MODEL || 'claude-sonnet-4-5',
   WORK_DIR: process.env.FLEETMANAGER_WORK_DIR || '/tmp/fleetmanager-work',
   SITE_TEMPLATE_DIR: process.env.FLEETMANAGER_SITE_TEMPLATE

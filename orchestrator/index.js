@@ -43,8 +43,8 @@ async function runScaffold(job, site) {
   // left null: the cron-based scheduler skips sites with seed_burst_complete=0
   // so it won't double-queue while the burst is running.
   await d1Run(
-    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, site_title = ?, tagline = ?, about_text = ?, next_run_at = NULL, seed_burst_complete = 0 WHERE id = ?`,
-    [out.repo_url, out.site_url, out.theme_json, out.site_title || null, out.tagline || null, out.about_text || null, site.id]
+    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, site_title = ?, tagline = ?, about_text = ?, image_style_prompt = ?, next_run_at = NULL, seed_burst_complete = 0 WHERE id = ?`,
+    [out.repo_url, out.site_url, out.theme_json, out.site_title || null, out.tagline || null, out.about_text || null, out.image_style_prompt || null, site.id]
   );
   // Queue the full seed burst of generate_post jobs, staggered so we don't
   // hammer the APIs. First one fires in ~30s to give Pages a moment to wake up.

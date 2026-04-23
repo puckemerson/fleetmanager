@@ -88,3 +88,57 @@ export function repoPagesUrl(repo) {
 export function pagesOrigin() {
   return `https://${CONFIG.GITHUB_USER}.github.io`;
 }
+
+// Set the GitHub Pages custom domain (CNAME) for a repo.
+export async function setPagesCname(repo, cname) {
+  return await ghFetch(`/repos/${CONFIG.GITHUB_USER}/${repo}/pages`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cname: cname || null }),
+  });
+}
+
+// Get GitHub Pages info for a repo.
+export async function getPagesInfo(repo) {
+  try {
+    return await ghFetch(`/repos/${CONFIG.GITHUB_USER}/${repo}/pages`);
+  } catch (err) {
+    if (String(err.message).includes('404')) return null;
+    throw err;
+  }
+}
+
+// Get a file from a repo via contents API. Returns {sha, content} or null.
+export async function getRepoFile(repo, filePath) {
+  try {
+    const r = await ghFetch(`/repos/${CONFIG.GITHUB_USER}/${repo}/contents/${filePath}`);
+    return { sha: r.sha, content: r.content };
+  } catch (err) {
+    if (String(err.message).includes('404')) return null;
+    throw err;
+  }
+}
+
+// Create or update a file in a repo via contents API.
+export async function putRepoFile(repo, filePath, content, message, existingSha) {
+  const body = {
+    message,
+    content: Buffer.from(content).toString('base64'),
+    branch: 'main',
+  };
+  if (existingSha) body.sha = existingSha;
+  return await ghFetch(`/repos/${CONFIG.GITHUB_USER}/${repo}/contents/${filePath}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// Delete a file from a repo via contents API.
+export async function deleteRepoFile(repo, filePath, message, fileSha) {
+  return await ghFetch(`/repos/${CONFIG.GITHUB_USER}/${repo}/contents/${filePath}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sha: fileSha, branch: 'main' }),
+  });
+}

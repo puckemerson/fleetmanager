@@ -204,6 +204,23 @@ Pick a specific angle, write the listicle. Strict JSON only.`;
   return json;
 }
 
+export async function generateImageStylePrompt(category) {
+  const sys = `You generate concise image style prompts for AI product photography. Output ONLY the style prompt text, nothing else. No quotes, no explanation, no JSON.`;
+  const user = `Generate a concise image style prompt (max 30 words) for AI product photography of ${category} products. The style should be distinctive, consistent, and suitable for an editorial review site. Return ONLY the style prompt text, nothing else.`;
+  try {
+    const { text } = await completeWithFallback({
+      system: sys,
+      messages: [{ role: 'user', content: user }],
+      max_tokens: 100,
+    });
+    // Strip any accidental quotes, fences
+    return text.replace(/^["'`]+|["'`]+$/g, '').trim();
+  } catch (err) {
+    // Fallback to sensible default
+    return `clean editorial product photography, white studio background, sharp focus, professional lighting`;
+  }
+}
+
 export async function siteTaglineAndAbout(category) {
   const sys = `You write short, tasteful editorial copy for independent review sites. Output strict JSON only.`;
   const user = `For a review site focused on the category "${category}", produce:

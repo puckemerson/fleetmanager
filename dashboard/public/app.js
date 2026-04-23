@@ -277,6 +277,16 @@ async function renderDetail() {
         <div id="listicles-list" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
       </div>
 
+      <div class="panel" id="custom-domain-panel">
+        <strong>Custom Domain</strong>
+        <div id="custom-domain-body" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
+      </div>
+
+      <div class="panel" id="image-style-panel">
+        <strong>Image Style (Replicate img2img)</strong>
+        <div id="image-style-body" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
+      </div>
+
       <div class="panel" id="affiliate-panel">
         <div class="row">
           <strong>Affiliate</strong>
@@ -363,6 +373,18 @@ async function renderDetail() {
         if (list) list.innerHTML = `<div class="error">${esc(err.message)}</div>`;
       }
     })();
+    // Custom domain panel
+    try { renderCustomDomainPanel(site); } catch (err) {
+      const body = $('custom-domain-body');
+      if (body) body.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+    }
+
+    // Image style panel
+    try { renderImageStylePanel(site); } catch (err) {
+      const body = $('image-style-body');
+      if (body) body.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+    }
+
     // Affiliate panel
     (async () => {
       try { await renderAffiliatePanel(site); }
@@ -524,6 +546,148 @@ async function renderAffiliatePanel(site) {
       });
       renderDetail();
     } catch (err) { alert(err.message); }
+  };
+}
+
+function renderCustomDomainPanel(site) {
+  const panel = document.getElementById('custom-domain-body');
+  if (!panel) return;
+  const domain = site.custom_domain || '';
+  const status = site.custom_domain_status || 'none';
+
+  const statusBadge = (s) => {
+    const map = { none: '#e5e7eb:#374151', pending_dns: '#fef3c7:#92400e', active: '#d1fae5:#065f46', error: '#fee2e2:#991b1b' };
+    const [bg, color] = (map[s] || map.none).split(':');
+    return `<span class="tag" style="background:${bg};color:${color};">${esc(s)}</span>`;
+  };
+
+  if (!domain) {
+    panel.innerHTML = `
+      <div class="muted" style="margin-bottom: 8px;">No custom domain set. You can point your own domain at this site.</div>
+      <form id="set-domain-form" style="display:flex; gap: 8px; align-items: center;">
+        <input id="domain-input" type="text" placeholder="reviews.mysite.com" style="flex:1;" required>
+        <button type="submit" class="btn small">Set domain</button>
+      </form>
+      <div class="error" id="domain-err" style="margin-top:6px;"></div>
+    `;
+    const form = document.getElementById('set-domain-form');
+    if (form) form.onsubmit = async (e) => {
+      e.preventDefault();
+      const d = document.getElementById('domain-input').value.trim();
+      const errEl = document.getElementById('domain-err');
+      errEl.textContent = '';
+      try {
+        const res = await api(`/api/sites/${site.id}/custom-domain`, { method: 'PUT', body: JSON.stringify({ domain: d }) });
+        // Re-render with updated site
+        Object.assign(site, res.site || {});
+        renderCustomDomainPanel(site);
+      } catch (err) { errEl.textContent = err.message; }
+    };
+    return;
+  }
+
+  // Domain is set — show status + DNS instructions
+  let dnsHtml = '';
+  if (status === 'pending_dns' || status === 'active') {
+    const isApex = domain.split('.').length === 2;
+    if (isApex) {
+      const ips = ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'];
+      const aRecords = ips.map(ip => `Type: A | Name: @ | Value: ${ip}`).join('<br>');
+      const aaaaRecords = [
+        '2606:50c0:8000::153','2606:50c0:8001::153','2606:50c0:8002::153','2606:50c0:8003::153'
+      ].map(ip => `Type: AAAA | Name: @ | Value: ${ip}`).join('<br>');
+      dnsHtml = `<div class="panel" style="background:#f9fafb; margin-top:8px; font-size:13px;">
+        <strong>DNS Records for apex domain ${esc(domain)}:</strong><br><br>
+        ${aRecords}<br><br>${aaaaRecords}
+        <br><button class="btn secondary small" id="copy-dns" style="margin-top:6px;">Copy DNS instructions</button>
+      </div>`;
+    } else {
+      const sub = domain.split('.').slice(0, -2).join('.');
+      dnsHtml = `<div class="panel" style="background:#f9fafb; margin-top:8px; font-size:13px;">
+        <strong>DNS Record for subdomain ${esc(domain)}:</strong><br><br>
+        Type: CNAME | Name: ${esc(sub)} | Value: puckemerson.github.io
+        <br><button class="btn secondary small" id="copy-dns" style="margin-top:6px;">Copy DNS instructions</button>
+      </div>`;
+    }
+  }
+
+  panel.innerHTML = `
+    <div class="row" style="align-items:center; gap:8px;">
+      <strong>${esc(domain)}</strong> ${statusBadge(status)}
+    </div>
+    ${dnsHtml}
+    <div class="row" style="margin-top:10px; gap:8px;">
+      <button class="btn small" id="verify-domain-btn">Verify DNS</button>
+      <button class="btn danger small" id="remove-domain-btn">Remove domain</button>
+    </div>
+    <div id="verify-result" style="margin-top:6px; font-size:13px;"></div>
+  `;
+
+  const copyBtn = document.getElementById('copy-dns');
+  if (copyBtn) {
+    const isApex = domain.split('.').length === 2;
+    copyBtn.onclick = () => {
+      let txt;
+      if (isApex) {
+        const ips = ['185.199.108.153','185.199.109.153','185.199.110.153','185.199.111.153'];
+        const aaaaIps = ['2606:50c0:8000::153','2606:50c0:8001::153','2606:50c0:8002::153','2606:50c0:8003::153'];
+        txt = ips.map(ip => `Type: A  Name: @  Value: ${ip}`).join('\n') + '\n' + aaaaIps.map(ip => `Type: AAAA  Name: @  Value: ${ip}`).join('\n');
+      } else {
+        const sub = domain.split('.').slice(0, -2).join('.');
+        txt = `Type: CNAME  Name: ${sub}  Value: puckemerson.github.io`;
+      }
+      navigator.clipboard.writeText(txt).then(() => { copyBtn.textContent = 'Copied!'; setTimeout(() => { copyBtn.textContent = 'Copy DNS instructions'; }, 2000); });
+    };
+  }
+
+  const verifyBtn = document.getElementById('verify-domain-btn');
+  if (verifyBtn) verifyBtn.onclick = async () => {
+    verifyBtn.disabled = true; verifyBtn.textContent = 'Checking…';
+    const resultEl = document.getElementById('verify-result');
+    try {
+      const res = await api(`/api/sites/${site.id}/verify-domain`, { method: 'POST' });
+      resultEl.innerHTML = `<span class="${res.status === 'active' ? 'tag' : 'muted'}">${esc(res.message)}</span>`;
+      if (res.status === 'active') { site.custom_domain_status = 'active'; renderCustomDomainPanel(site); }
+    } catch (err) { resultEl.textContent = err.message; }
+    finally { verifyBtn.disabled = false; verifyBtn.textContent = 'Verify DNS'; }
+  };
+
+  const removeBtn = document.getElementById('remove-domain-btn');
+  if (removeBtn) removeBtn.onclick = async () => {
+    if (!confirm(`Remove custom domain '${domain}'?`)) return;
+    removeBtn.disabled = true;
+    try {
+      const res = await api(`/api/sites/${site.id}/custom-domain`, { method: 'DELETE' });
+      Object.assign(site, res.site || {});
+      renderCustomDomainPanel(site);
+    } catch (err) { alert(err.message); removeBtn.disabled = false; }
+  };
+}
+
+function renderImageStylePanel(site) {
+  const panel = document.getElementById('image-style-body');
+  if (!panel) return;
+  const prompt = site.image_style_prompt || '';
+  panel.innerHTML = `
+    <div class="muted" style="margin-bottom: 8px; font-size: 13px;">Used for Replicate img2img when <code>REPLICATE_API_KEY</code> is set. Changes take effect on the next generated review.</div>
+    <textarea id="style-prompt-input" rows="3" style="width:100%; font-size:13px;" placeholder="e.g. editorial product photography, white marble surface, soft natural light, minimalist">${esc(prompt)}</textarea>
+    <div style="margin-top: 6px;">
+      <button class="btn small" id="save-style-prompt">Save style prompt</button>
+    </div>
+    <div id="style-prompt-msg" style="margin-top:4px; font-size:12px;"></div>
+  `;
+  const saveBtn = document.getElementById('save-style-prompt');
+  if (saveBtn) saveBtn.onclick = async () => {
+    const val = document.getElementById('style-prompt-input').value.trim();
+    const msg = document.getElementById('style-prompt-msg');
+    saveBtn.disabled = true;
+    try {
+      await api(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ image_style_prompt: val || null }) });
+      site.image_style_prompt = val || null;
+      msg.textContent = 'Saved.';
+      setTimeout(() => { msg.textContent = ''; }, 2000);
+    } catch (err) { msg.textContent = err.message; }
+    finally { saveBtn.disabled = false; }
   };
 }
 

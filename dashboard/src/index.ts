@@ -8,6 +8,7 @@ type Bindings = {
   DB: D1Database;
   ASSETS: Fetcher;
   DASHBOARD_PASSWORD_HASH: string;
+  GITHUB_PAT: string;
 };
 
 type Variables = {
@@ -202,6 +203,9 @@ app.patch('/api/sites/:id', requireAuth, async (c) => {
     if (!Number.isInteger(r) || r < 1 || r > 10000) return c.json({ error: 'invalid listicle_ratio' }, 400);
     updates.push('listicle_ratio = ?'); binds.push(r);
   }
+  if (typeof body.image_style_prompt === 'string' || body.image_style_prompt === null) {
+    updates.push('image_style_prompt = ?'); binds.push(body.image_style_prompt || null);
+  }
   if (updates.length === 0) return c.json({ error: 'nothing to update' }, 400);
   binds.push(id);
   await c.env.DB.prepare(`UPDATE sites SET ${updates.join(', ')} WHERE id = ?`).bind(...binds).run();
@@ -374,6 +378,217 @@ app.get('/api/sites/:id/clicks', requireAuth, async (c) => {
     by_retailer: byRetailer.results || [],
     by_post: byPost.results || [],
   });
+});
+
+// --- Custom domain ---
+
+const GH_API = 'https://api.github.com';
+const GH_USER = 'puckemerson';
+const GH_PAGES_IPS = ['185.199.108.153', '185.199.109.153', '185.199.110.153', '185.199.111.153'];
+const GH_PAGES_AAAA = ['2606:50c0:8000::153', '2606:50c0:8001::153', '2606:50c0:8002::153', '2606:50c0:8003::153'];
+
+async function ghFetch(c: any, path: string, opts: any = {}) {
+  const pat = c.env.GITHUB_PAT;
+  if (!pat) throw new Error('GITHUB_PAT not configured in Worker secrets');
+  const res = await fetch(GH_API + path, {
+    ...opts,
+    headers: {
+      Authorization: `token ${pat}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'fleetmanager-dashboard',
+      ...(opts.headers || {}),
+    },
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GitHub ${opts.method || 'GET'} ${path} -> ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : {};
+}
+
+function isValidDomain(d: string): boolean {
+  return /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(d);
+}
+
+function isApexDomain(d: string): boolean {
+  // Apex = only one dot (e.g. mysite.com vs reviews.mysite.com)
+  return d.split('.').length === 2;
+}
+
+function buildDnsInstructions(domain: string): object {
+  if (isApexDomain(domain)) {
+    return {
+      type: 'apex',
+      domain,
+      records: [
+        ...GH_PAGES_IPS.map(ip => ({ type: 'A', name: '@', value: ip })),
+        ...GH_PAGES_AAAA.map(ip => ({ type: 'AAAA', name: '@', value: ip })),
+      ],
+      instructions: `For apex domain ${domain}, add these DNS records at your registrar/DNS provider:\n\n` +
+        GH_PAGES_IPS.map(ip => `Type: A\nName: @\nValue: ${ip}`).join('\n\n') + '\n\n' +
+        GH_PAGES_AAAA.map(ip => `Type: AAAA\nName: @\nValue: ${ip}`).join('\n\n'),
+    };
+  } else {
+    const parts = domain.split('.');
+    const sub = parts.slice(0, parts.length - 2).join('.');
+    return {
+      type: 'subdomain',
+      domain,
+      records: [{ type: 'CNAME', name: sub, value: `${GH_USER}.github.io` }],
+      instructions: `For subdomain ${domain}:\n\nType: CNAME\nName: ${sub}\nValue: ${GH_USER}.github.io`,
+    };
+  }
+}
+
+app.put('/api/sites/:id/custom-domain', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid json' }, 400); }
+  const domain = (body?.domain ?? '').toString().trim().toLowerCase();
+  if (!domain || !isValidDomain(domain)) return c.json({ error: 'invalid domain format' }, 400);
+
+  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<any>();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  if (!site.slug) return c.json({ error: 'site not yet scaffolded' }, 400);
+
+  const slug = site.slug as string;
+
+  // Write CNAME file to repo
+  try {
+    // Check if file already exists (need SHA for update)
+    let existingSha: string | undefined;
+    try {
+      const existing = await ghFetch(c, `/repos/${GH_USER}/${slug}/contents/CNAME`);
+      existingSha = existing.sha;
+    } catch { /* not found is fine */ }
+
+    const fileBody: any = {
+      message: `Set custom domain: ${domain}`,
+      content: btoa(domain + '\n'),
+      branch: 'main',
+    };
+    if (existingSha) fileBody.sha = existingSha;
+    await ghFetch(c, `/repos/${GH_USER}/${slug}/contents/CNAME`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fileBody),
+    });
+  } catch (err: any) {
+    return c.json({ error: `Failed to write CNAME file: ${err.message}` }, 500);
+  }
+
+  // Set GitHub Pages CNAME via API
+  try {
+    await ghFetch(c, `/repos/${GH_USER}/${slug}/pages`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cname: domain }),
+    });
+  } catch (err: any) {
+    // Non-fatal: GH Pages API sometimes requires a moment after CNAME commit
+    console.warn(`[custom-domain] GH Pages API PUT warning: ${err.message}`);
+  }
+
+  // Save to D1
+  await c.env.DB.prepare(
+    'UPDATE sites SET custom_domain = ?, custom_domain_status = ?, site_url = ? WHERE id = ?'
+  ).bind(domain, 'pending_dns', `https://${domain}`, id).run();
+
+  const dns = buildDnsInstructions(domain);
+  const updated = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first();
+  return c.json({ site: updated, dns_instructions: dns });
+});
+
+app.post('/api/sites/:id/verify-domain', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+
+  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<any>();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  if (!site.custom_domain) return c.json({ error: 'no custom domain set' }, 400);
+
+  let ghPages: any = null;
+  try {
+    ghPages = await ghFetch(c, `/repos/${GH_USER}/${site.slug}/pages`);
+  } catch (err: any) {
+    return c.json({ status: 'error', message: `Could not fetch GitHub Pages info: ${err.message}` });
+  }
+
+  const ghCname = (ghPages?.cname ?? '').toString().toLowerCase().trim();
+  const ourDomain = (site.custom_domain as string).toLowerCase().trim();
+  const certState = ghPages?.https_certificate?.state ?? 'unknown';
+
+  if (ghCname !== ourDomain) {
+    return c.json({
+      status: 'pending',
+      message: `GitHub Pages CNAME is '${ghCname || '(none)'}', expected '${ourDomain}'. DNS may still be propagating.`,
+      cert_state: certState,
+    });
+  }
+
+  // CNAME matches — check cert
+  const isActive = ['approved', 'valid'].some(s => certState.toLowerCase().includes(s));
+  if (isActive) {
+    await c.env.DB.prepare('UPDATE sites SET custom_domain_status = ? WHERE id = ?')
+      .bind('active', id).run();
+    return c.json({ status: 'active', message: 'Domain is active and HTTPS certificate is ready.', cert_state: certState });
+  }
+
+  // CNAME matches but cert not ready yet
+  await c.env.DB.prepare('UPDATE sites SET custom_domain_status = ? WHERE id = ?')
+    .bind('pending_dns', id).run();
+  return c.json({ status: 'pending_dns', message: `CNAME matches but HTTPS certificate is not ready yet (state: ${certState}). Try again in a few minutes.`, cert_state: certState });
+});
+
+app.delete('/api/sites/:id/custom-domain', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+
+  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<any>();
+  if (!site) return c.json({ error: 'not found' }, 404);
+
+  const slug = site.slug as string;
+
+  // Remove CNAME file from repo
+  try {
+    const existing = await ghFetch(c, `/repos/${GH_USER}/${slug}/contents/CNAME`);
+    if (existing?.sha) {
+      await ghFetch(c, `/repos/${GH_USER}/${slug}/contents/CNAME`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Remove custom domain',
+          sha: existing.sha,
+          branch: 'main',
+        }),
+      });
+    }
+  } catch (err: any) {
+    if (!String(err.message).includes('404')) {
+      console.warn(`[custom-domain] delete CNAME file warning: ${err.message}`);
+    }
+  }
+
+  // Clear GH Pages CNAME
+  try {
+    await ghFetch(c, `/repos/${GH_USER}/${slug}/pages`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cname: null }),
+    });
+  } catch (err: any) {
+    console.warn(`[custom-domain] clear GH Pages CNAME warning: ${err.message}`);
+  }
+
+  // Restore site_url to GitHub Pages URL and clear domain fields
+  const ghPagesUrl = `https://${GH_USER}.github.io/${slug}/`;
+  await c.env.DB.prepare(
+    'UPDATE sites SET custom_domain = NULL, custom_domain_status = \'none\', site_url = ? WHERE id = ?'
+  ).bind(ghPagesUrl, id).run();
+
+  const updated = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first();
+  return c.json({ site: updated });
 });
 
 // Unknown API routes

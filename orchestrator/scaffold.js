@@ -18,7 +18,7 @@ function jsonSafe(s) {
 }
 import { createRepo, enablePages, repoGitUrl, repoPagesUrl, pagesOrigin } from './github.js';
 import { randomTheme, themeCss } from './theme.js';
-import { siteTaglineAndAbout } from './llm.js';
+import { siteTaglineAndAbout, generateImageStylePrompt } from './llm.js';
 
 async function copyTemplate(dest) {
   // Remove existing dest, then copy template
@@ -59,6 +59,15 @@ export async function scaffoldSite({ slug, category }) {
   console.log(`[scaffold] theme: ${theme.palette.name} / ${theme.fonts.sans}+${theme.fonts.serif}`);
   const editorial = await siteTaglineAndAbout(category);
   console.log(`[scaffold] title: ${editorial.title}`);
+
+  // 2a. Generate image style prompt for Replicate img2img.
+  let imageStylePrompt = null;
+  try {
+    imageStylePrompt = await generateImageStylePrompt(category);
+    console.log(`[scaffold] image_style_prompt: ${imageStylePrompt}`);
+  } catch (err) {
+    console.log(`[scaffold] image_style_prompt generation failed (non-fatal): ${err.message}`);
+  }
 
   // 3. Copy template
   await copyTemplate(workRepo);
@@ -129,6 +138,7 @@ export async function scaffoldSite({ slug, category }) {
     site_title: editorial.title,
     tagline: editorial.tagline,
     about_text: editorial.about,
+    image_style_prompt: imageStylePrompt,
     workRepo,
   };
 }

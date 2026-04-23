@@ -9,6 +9,7 @@ import { proposeProducts, synthesizeReview } from './llm.js';
 import { searchWeb, fetchPage, extractPage, findProductImage } from './search.js';
 import { repoGitUrl } from './github.js';
 import { detectRetailer } from '../shared/affiliate.js';
+import { restyleImage } from './replicate.js';
 
 function slugify(s) {
   return String(s || '').toLowerCase().trim()
@@ -107,6 +108,28 @@ export async function generatePost({ site }) {
   const img = await findProductImage(product.name);
   if (img) console.log(`[generate] image from ${img.sourceUrl} (${img.buffer.length} bytes)`);
   else console.log(`[generate] no image found; post will have placeholder`);
+
+  // 6a. Optionally restyle via Replicate img2img
+  if (img && CONFIG.REPLICATE_API_KEY && site.image_style_prompt) {
+    console.log(`[generate] restyling image via Replicate (style: ${site.image_style_prompt.slice(0, 60)}...)`);
+    try {
+      const restyled = await restyleImage({
+        imageBuffer: img.buffer,
+        productName: product.name,
+        stylePrompt: site.image_style_prompt,
+        apiKey: CONFIG.REPLICATE_API_KEY,
+      });
+      img.buffer = restyled;
+      img.contentType = 'image/webp'; // flux-dev typically outputs webp
+      console.log(`[generate] Replicate restyle complete (${restyled.length} bytes)`);
+    } catch (err) {
+      console.log(`[generate] Replicate restyle failed, using raw scraped image: ${err.message}`);
+    }
+  } else if (!CONFIG.REPLICATE_API_KEY) {
+    console.log(`[generate] REPLICATE_API_KEY not set, using raw scraped image`);
+  } else if (!site.image_style_prompt) {
+    console.log(`[generate] no image_style_prompt on site, using raw scraped image`);
+  }
 
   // 7. Prepare repo clone
   const workRepo = await ensureRepoClone(siteSlug, repoUrl);
