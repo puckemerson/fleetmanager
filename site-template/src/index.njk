@@ -2,20 +2,47 @@
 layout: base.njk
 title: Home
 ---
-<div class="grid">
-{% for review in collections.reviews %}
-  <a class="card" href="{{ review.url | url }}">
-    {% if review.data.image %}<img src="{{ review.data.image | url }}" alt="{{ review.data.product_name }}">{% else %}<div style="height:180px;background:var(--accent-soft);"></div>{% endif %}
-    <div class="body">
-      <div class="title">{{ review.data.product_name }}</div>
-      <div class="meta">
-        <span>{{ review.date | date }}</span>
-        <span class="score-badge">{{ review.data.final_score | round }}</span>
-      </div>
-    </div>
-  </a>
-{% endfor %}
-{% if collections.reviews.length == 0 %}
-<p style="grid-column: 1/-1; color: var(--muted); text-align:center; padding: 40px 0;">No reviews yet — the first one will appear here soon.</p>
-{% endif %}
+<div class="home-lead">
+  <p>{{ site.tagline }}</p>
 </div>
+
+{% if collections.reviewsByScore.length > 2 %}
+<section class="highest-rated">
+  <h2>Highest rated</h2>
+  <div class="grid">
+  {% for review in collections.reviewsByScore.slice(0, 3) %}
+    <a class="card" href="{{ review.url | url }}">
+      {% if review.data.image %}<img src="{{ review.data.image | url }}" alt="{{ review.data.product_name }}" loading="lazy" width="320" height="180">{% else %}<div class="card-placeholder"></div>{% endif %}
+      <div class="body">
+        <div class="title">{{ review.data.product_name }}</div>
+        <div class="meta">
+          <span><time datetime="{{ review.date | date('iso') }}">{{ review.date | date }}</time></span>
+          <span class="score-badge">{{ review.data.final_score | round }}</span>
+        </div>
+      </div>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="latest">
+  <h2>{% if collections.reviewsByScore.length > 2 %}Latest reviews{% else %}Reviews{% endif %}</h2>
+  <div class="grid">
+  {% for review in collections.reviews %}
+    <a class="card" href="{{ review.url | url }}">
+      {% if review.data.image %}<img src="{{ review.data.image | url }}" alt="{{ review.data.product_name }}" loading="lazy" width="320" height="180">{% else %}<div class="card-placeholder"></div>{% endif %}
+      <div class="body">
+        <div class="title">{{ review.data.product_name }}</div>
+        <div class="meta">
+          <span><time datetime="{{ review.date | date('iso') }}">{{ review.date | date }}</time></span>
+          <span class="score-badge">{{ review.data.final_score | round }}</span>
+        </div>
+      </div>
+    </a>
+  {% endfor %}
+  {% if collections.reviews.length == 0 %}
+  <p style="grid-column: 1/-1; color: var(--muted); text-align:center; padding: 40px 0;">No reviews yet — the first one will appear here soon.</p>
+  {% endif %}
+  </div>
+</section>

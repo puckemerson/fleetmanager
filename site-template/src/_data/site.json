@@ -2,5 +2,10 @@
   "title": "SITE_TITLE",
   "tagline": "SITE_TAGLINE",
   "category": "SITE_CATEGORY",
-  "pathPrefix": "/SITE_SLUG/"
+  "pathPrefix": "/SITE_SLUG/",
+  "slug": "SITE_SLUG",
+  "url": "SITE_URL",
+  "about": "SITE_ABOUT_PARAGRAPH",
+  "analytics_snippet": "",
+  "ghUser": "SITE_GH_USER"
 }

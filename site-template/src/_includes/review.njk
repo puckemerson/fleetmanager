@@ -3,13 +3,13 @@ layout: base.njk
 ---
 <a href="{{ '/' | url }}" class="back-link">← back to all reviews</a>
 <article class="review">
-  {% if image %}<img src="{{ image | url }}" alt="{{ product_name }}" class="hero">{% endif %}
+  {% if image %}<img src="{{ image | url }}" alt="{{ product_name }}" class="hero" width="1200" height="630" fetchpriority="high">{% endif %}
   <h1>{{ product_name }}</h1>
   <div class="lead">
     <div class="score">{{ final_score | round }}</div>
     <div class="summary-meta">
       <div><strong>{{ product_name }}</strong></div>
-      <div>Reviewed on {{ date | date }}</div>
+      <div>Reviewed on <time datetime="{{ date | date('iso') }}">{{ date | date }}</time></div>
     </div>
   </div>
 
@@ -35,6 +35,33 @@ layout: base.njk
 
   <div class="footer">
     Final score: <strong>{{ final_score | round }}/100</strong>
-    {% if image_source %} · Image: <a href="{{ image_source }}">source</a>{% endif %}
+    {% if image_source %} · Image: <a href="{{ image_source }}" rel="nofollow noopener">source</a>{% endif %}
   </div>
+
+  {# Related reviews: other posts from this site, excluding the current one.
+     Priority: same top category name, then newest, capped at 5. #}
+  {%- set currentSlug = slug or page.fileSlug -%}
+  {%- set allReviews = collections.reviews -%}
+  {%- set related = [] -%}
+  {%- for r in allReviews -%}
+    {%- if r.data.slug != currentSlug and r.fileSlug != currentSlug -%}
+      {%- set related = (related.push(r), related) -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- if related.length > 0 -%}
+  <section class="related">
+    <h3>Related reviews</h3>
+    <div class="related-grid">
+      {%- for r in related.slice(0, 5) -%}
+      <a class="related-card" href="{{ r.url | url }}">
+        {% if r.data.image %}<img src="{{ r.data.image | url }}" alt="{{ r.data.product_name }}" loading="lazy" width="300" height="180">{% else %}<div class="related-placeholder"></div>{% endif %}
+        <div class="related-body">
+          <div class="related-title">{{ r.data.product_name }}</div>
+          <div class="related-meta"><span class="score-badge small">{{ r.data.final_score | round }}</span></div>
+        </div>
+      </a>
+      {%- endfor -%}
+    </div>
+  </section>
+  {%- endif -%}
 </article>

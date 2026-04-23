@@ -83,3 +83,8 @@ export function repoGitUrl(repo) {
 export function repoPagesUrl(repo) {
   return `https://${CONFIG.GITHUB_USER}.github.io/${repo}/`;
 }
+
+// Origin (no trailing slash, no path) used as the canonical base for SEO.
+export function pagesOrigin() {
+  return `https://${CONFIG.GITHUB_USER}.github.io`;
+}

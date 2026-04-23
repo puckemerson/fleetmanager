@@ -3,13 +3,109 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% if title %}{{ title }} · {% endif %}{{ site.title }}</title>
-<meta name="description" content="{{ description or site.tagline }}">
+{# --- SEO computed values --- #}
+{% set isReview = product_name and final_score %}
+{% set pageTitle = title or site.title %}
+{% if isReview %}
+  {% set metaTitle = product_name + " Review: " + (final_score | round | string) + "/100 - " + site.title %}
+{% elif pageTitle == "Home" or not title %}
+  {% set metaTitle = site.title + " - " + site.tagline %}
+{% else %}
+  {% set metaTitle = pageTitle + " - " + site.title %}
+{% endif %}
+
+{% if isReview %}
+  {% set metaDesc = metaDescription or (excerpt | truncate(155)) or site.tagline %}
+{% elif description %}
+  {% set metaDesc = description %}
+{% elif pageTitle == "About" %}
+  {% set metaDesc = "About " + site.title + ". " + site.tagline %}
+{% elif pageTitle == "Home" or not title %}
+  {% set metaDesc = (site.tagline + " " + (site.about or "")) | truncate(155) %}
+{% else %}
+  {% set metaDesc = site.tagline %}
+{% endif %}
+
+{# site.url is the origin (e.g. https://user.github.io); page.url already includes pathPrefix after the `url` filter #}
+{% set pageUrl = page.url | url %}
+{% set absUrl = site.url + pageUrl %}
+{% if isReview and image %}
+  {% set ogImage = site.url + (image | url) %}
+{% else %}
+  {% set ogImage = "" %}
+{% endif %}
+{% set ogType = "article" if isReview else "website" %}
+
+<title>{{ metaTitle }}</title>
+<meta name="description" content="{{ metaDesc | htmlAttr | safe }}">
+<link rel="canonical" href="{{ absUrl }}">
+
+{# Open Graph #}
+<meta property="og:site_name" content="{{ site.title | htmlAttr | safe }}">
+<meta property="og:title" content="{{ metaTitle | htmlAttr | safe }}">
+<meta property="og:description" content="{{ metaDesc | htmlAttr | safe }}">
+<meta property="og:url" content="{{ absUrl }}">
+<meta property="og:type" content="{{ ogType }}">
+{% if ogImage %}<meta property="og:image" content="{{ ogImage }}">{% endif %}
+{% if isReview %}
+<meta property="article:published_time" content="{{ date | date('isoFull') }}">
+{% endif %}
+
+{# Twitter Card #}
+<meta name="twitter:card" content="{% if ogImage %}summary_large_image{% else %}summary{% endif %}">
+<meta name="twitter:title" content="{{ metaTitle | htmlAttr | safe }}">
+<meta name="twitter:description" content="{{ metaDesc | htmlAttr | safe }}">
+{% if ogImage %}<meta name="twitter:image" content="{{ ogImage }}">{% endif %}
+
+{# Fonts: preconnect before stylesheet for performance #}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=FONT_SANS_QS&family=FONT_SERIF_QS&display=swap">
 <link rel="stylesheet" href="{{ '/_theme.css' | url }}">
 <link rel="stylesheet" href="{{ '/static/style.css' | url }}">
+
+{# JSON-LD structured data #}
+{% if isReview %}
+{%- set ratingValue = ((final_score / 20) | roundTo(1)) -%}
+{%- set brand = product_name | guessBrand -%}
+{%- set reviewSnippet = excerpt or (metaDescription) -%}
+{%- set ldReview = {
+  "@context": "https://schema.org",
+  "@type": "Review",
+  "itemReviewed": {
+    "@type": "Product",
+    "name": product_name,
+    "image": ogImage,
+    "brand": { "@type": "Brand", "name": brand }
+  },
+  "reviewRating": {
+    "@type": "Rating",
+    "ratingValue": ratingValue,
+    "bestRating": 5,
+    "worstRating": 1
+  },
+  "author": { "@type": "Organization", "name": site.title },
+  "publisher": { "@type": "Organization", "name": site.title },
+  "reviewBody": reviewSnippet,
+  "datePublished": (date | date('iso')),
+  "url": absUrl
+} -%}
+<script type="application/ld+json">{{ ldReview | jsonStringify | safe }}</script>
+{% elif pageTitle == "Home" or not title %}
+{%- set ldSite = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": site.title,
+  "description": site.tagline,
+  "url": absUrl
+} -%}
+<script type="application/ld+json">{{ ldSite | jsonStringify | safe }}</script>
+{% endif %}
+
+{# Analytics hook (rendered only if configured). #}
+{% if site.analytics_snippet %}
+{{ site.analytics_snippet | safe }}
+{% endif %}
 </head>
 <body>
 <header class="site">

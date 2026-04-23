@@ -31,12 +31,12 @@ async function finishJob(jobId, status, error, result) {
 
 async function runScaffold(job, site) {
   const out = await scaffoldSite({ slug: site.slug, category: site.product_category });
-  // Update site row with repo_url, site_url, theme_json
+  // Update site row with repo_url, site_url, theme_json, SEO fields.
   const now = Date.now();
   const next = nextRunFrom(now, site.cron_spec);
   await d1Run(
-    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, next_run_at = ? WHERE id = ?`,
-    [out.repo_url, out.site_url, out.theme_json, next, site.id]
+    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, site_title = ?, tagline = ?, about_text = ?, next_run_at = ? WHERE id = ?`,
+    [out.repo_url, out.site_url, out.theme_json, out.site_title || null, out.tagline || null, out.about_text || null, next, site.id]
   );
   // Queue first generate_post if a schedule is set
   if (next) {

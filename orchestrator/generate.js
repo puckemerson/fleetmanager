@@ -110,6 +110,14 @@ export async function generatePost({ site }) {
   // 7. Prepare repo clone
   const workRepo = await ensureRepoClone(siteSlug, repoUrl);
 
+  // 7a. Reconcile site config (tagline, about_text, analytics_snippet, url).
+  // D1 is the source of truth; write them into src/_data/site.json so the build reflects them.
+  try {
+    await reconcileSiteConfig(workRepo, site);
+  } catch (err) {
+    console.log(`[generate] site config reconcile warning: ${err.message}`);
+  }
+
   // 8. Write image (if any)
   const postSlug = product.slug;
   let imageRef = null;
@@ -163,6 +171,31 @@ export async function generatePost({ site }) {
     review_markdown: md,
     commit_sha: commitSha,
   };
+}
+
+async function reconcileSiteConfig(workRepo, site) {
+  const cfgPath = path.join(workRepo, 'src', '_data', 'site.json');
+  if (!fs.existsSync(cfgPath)) return;
+  const cur = JSON.parse(await fsp.readFile(cfgPath, 'utf8'));
+  const origin = (site.site_url || '').replace(/\/+$/, '').replace(/\/[^/]+$/, ''); // strip trailing repo path
+  const inferredOrigin = origin && /^https?:\/\//.test(origin) ? origin : cur.url;
+  const merged = {
+    ...cur,
+    title: site.site_title || cur.title,
+    tagline: site.tagline || cur.tagline,
+    category: site.product_category || cur.category,
+    pathPrefix: cur.pathPrefix || `/${site.slug}/`,
+    slug: site.slug || cur.slug,
+    url: inferredOrigin || cur.url,
+    about: site.about_text || cur.about,
+    analytics_snippet: site.analytics_snippet || cur.analytics_snippet || '',
+  };
+  // Only write if something changed to avoid spurious commits.
+  const before = JSON.stringify(cur);
+  const after = JSON.stringify(merged);
+  if (before !== after) {
+    await fsp.writeFile(cfgPath, JSON.stringify(merged, null, 2) + '\n');
+  }
 }
 
 function guessExt(ct) {

@@ -5,7 +5,18 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import simpleGit from 'simple-git';
 import { CONFIG } from './config.js';
-import { createRepo, enablePages, repoGitUrl, repoPagesUrl } from './github.js';
+
+// Escape a string for safe inclusion inside a JSON double-quoted value.
+// Used when substituting SITE_* tokens into site.json etc.
+function jsonSafe(s) {
+  return String(s == null ? '' : s)
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+}
+import { createRepo, enablePages, repoGitUrl, repoPagesUrl, pagesOrigin } from './github.js';
 import { randomTheme, themeCss } from './theme.js';
 import { siteTaglineAndAbout } from './llm.js';
 
@@ -56,12 +67,16 @@ export async function scaffoldSite({ slug, category }) {
   fs.writeFileSync(path.join(workRepo, 'src/_theme.css'), themeCss(theme));
 
   // 5. Apply substitutions
+  // site.url is the origin (no trailing path); pathPrefix in page.url | url adds the repo path.
+  const siteOrigin = pagesOrigin();
   const subs = {
-    SITE_TITLE: editorial.title,
-    SITE_TAGLINE: editorial.tagline,
-    SITE_CATEGORY: category,
+    SITE_TITLE: jsonSafe(editorial.title),
+    SITE_TAGLINE: jsonSafe(editorial.tagline),
+    SITE_CATEGORY: jsonSafe(category),
     SITE_SLUG: slug,
-    SITE_ABOUT_PARAGRAPH: editorial.about,
+    SITE_ABOUT_PARAGRAPH: jsonSafe(editorial.about),
+    SITE_URL: siteOrigin,
+    SITE_GH_USER: CONFIG.GITHUB_USER,
     FONT_SANS_QS: theme.fonts.sansQs,
     FONT_SERIF_QS: theme.fonts.serifQs,
   };
@@ -112,6 +127,8 @@ export async function scaffoldSite({ slug, category }) {
     theme_json: JSON.stringify({ palette: theme.palette.name, fonts: `${theme.fonts.sans}+${theme.fonts.serif}` }),
     repo_name: repoName,
     site_title: editorial.title,
+    tagline: editorial.tagline,
+    about_text: editorial.about,
     workRepo,
   };
 }

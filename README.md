@@ -67,7 +67,38 @@ The dashboard Worker stores `DASHBOARD_PASSWORD_HASH` as a Cloudflare secret.
 
 ## D1 schema
 
-See `dashboard/migrations/0001_init.sql`.
+See `dashboard/migrations/0001_init.sql` and `0002_seo_fields.sql`.
+
+`sites` columns added in 0002:
+- `site_title` — rendered as the title on every page
+- `tagline` — used in home meta description and OG
+- `about_text` — rendered on /about/
+- `analytics_snippet` — arbitrary HTML inlined in `<head>` (e.g. Plausible / Umami / GA4). Left empty by default.
+
+To update a site's analytics snippet:
+```sh
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/d1/database/$D1_ID/query" \
+  -H "X-Auth-Email: $CF_EMAIL" -H "X-Auth-Key: $CF_API_KEY" -H "Content-Type: application/json" \
+  -d '{"sql":"UPDATE sites SET analytics_snippet = ? WHERE slug = ?","params":["<script>...</script>","my-slug"]}'
+```
+The next `generate_post` job for that site will propagate the value into `src/_data/site.json` and it will render on subsequent builds.
+
+## SEO
+
+Every site emits:
+- JSON-LD `Review` on each review page (with `Product` itemReviewed, 1-5 star rating, author as Organization)
+- JSON-LD `WebSite` on the homepage
+- Unique `<title>`, `<meta description>`, `<link rel=canonical>`, Open Graph + Twitter Card on every page
+- `sitemap.xml` + `robots.txt` at the root
+- "Related reviews" on each review page, "Highest rated" section on the homepage
+- Lazy-loaded images with explicit width/height to minimize CLS
+
+Backfill an existing site (or all sites) to match the current template:
+```sh
+node scripts/backfill-seo.js --slug <slug>    # single site
+node scripts/backfill-seo.js                  # all active sites
+node scripts/backfill-seo.js --dry-run        # preview changes
+```
 
 ## Notes
 
