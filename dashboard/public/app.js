@@ -243,7 +243,22 @@ async function renderDetail() {
           <div class="spacer"></div>
           <button class="btn danger small" id="archive">Archive</button>
         </div>
+        <div class="row" style="margin-top: 10px;">
+          <label>Listicle ratio (reviews per listicle):</label>
+          <input type="number" id="listicle-ratio" min="1" max="100" value="${site.listicle_ratio || 10}" style="width:80px;">
+          <button class="btn small" id="save-ratio">Save</button>
+          <span class="muted">· counter: ${site.reviews_since_last_listicle || 0}/${site.listicle_ratio || 10}</span>
+        </div>
         <div class="muted" style="margin-top:8px;">next run: ${relFuture(site.next_run_at)}</div>
+      </div>
+
+      <div class="panel">
+        <div class="row">
+          <strong>Listicles</strong>
+          <div class="spacer"></div>
+          <button class="btn secondary small" id="gen-listicle-now">Generate listicle now</button>
+        </div>
+        <div id="listicles-list" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
       </div>
 
       <div class="panel">
@@ -282,6 +297,47 @@ async function renderDetail() {
       try { await api(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ cron_spec: $('schedule').value }) }); renderDetail(); }
       catch (err) { alert(err.message); }
     };
+    $('save-ratio').onclick = async () => {
+      const v = Number($('listicle-ratio').value);
+      if (!Number.isInteger(v) || v < 1) { alert('ratio must be a positive integer'); return; }
+      try { await api(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ listicle_ratio: v }) }); renderDetail(); }
+      catch (err) { alert(err.message); }
+    };
+    $('gen-listicle-now').onclick = async () => {
+      const btn = $('gen-listicle-now');
+      btn.disabled = true; btn.textContent = 'Queued…';
+      try { await api(`/api/sites/${site.id}/generate-listicle-now`, { method: 'POST' }); btn.textContent = 'Queued ✓'; }
+      catch (err) { alert(err.message); btn.textContent = 'Generate listicle now'; btn.disabled = false; }
+      setTimeout(() => renderDetail(), 1500);
+    };
+    // Load listicles async
+    (async () => {
+      try {
+        const { listicles } = await api(`/api/sites/${site.id}/listicles`);
+        const list = $('listicles-list');
+        if (!list) return;
+        if (!listicles || listicles.length === 0) {
+          list.innerHTML = '<div class="muted">No listicles yet.</div>';
+          return;
+        }
+        list.innerHTML = listicles.map(l => {
+          const liveUrl = site.site_url ? `${site.site_url.replace(/\/$/, '')}/listicles/${l.slug}/` : null;
+          const items = (l.items || []).map(i => `<li>#${i.rank} <strong>${esc(i.product_name)}</strong> <span class="muted">(${i.final_score})</span></li>`).join('');
+          return `
+            <div class="post" style="align-items:flex-start;">
+              <div class="body" style="flex:1;">
+                <div class="name">${esc(l.title)} <span class="tag">${l.item_count} picks</span></div>
+                <div class="muted">${fmtTime(l.created_at)} · ${liveUrl ? `<a href="${esc(liveUrl)}" target="_blank">view</a>` : 'local'}</div>
+                <ol style="margin:6px 0 0 0; padding-left: 20px; font-size: 13px;">${items}</ol>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        const list = $('listicles-list');
+        if (list) list.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+      }
+    })();
     $('archive').onclick = async () => {
       if (!confirm('Archive this site? (Repo will remain.)')) return;
       try { await api(`/api/sites/${site.id}`, { method: 'DELETE' }); state.view = 'list'; render(); }

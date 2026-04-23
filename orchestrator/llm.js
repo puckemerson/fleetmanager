@@ -129,6 +129,72 @@ Write the review and scoring now. Strict JSON only.`;
   };
 }
 
+export async function generateListicle({ category, reviews, existingListicles, targetItemCount }) {
+  // reviews: array of { slug, product_name, final_score }
+  // existingListicles: array of { title, slug }
+  const want = Math.max(3, Math.min(Number(targetItemCount) || 5, reviews.length));
+  const sys = `You are an editorial curator for a product review site. Your job: pick a compelling "Best X for Y" angle that groups a subset of already-reviewed products into a useful listicle.
+
+Rules:
+- Output strict JSON only. No prose before or after. No markdown fences.
+- Pick an angle that actually fits the products provided. Don't force it.
+- Choose between 3 and ${want} products from the provided list. ONLY use product slugs from the list below — do not invent products that don't exist.
+- Rank them deliberately (1 = best fit for the angle, not just the highest score).
+- Write a 2-3 sentence intro framing the angle. Write a 1-2 sentence outro.
+- Write a 1-2 sentence blurb per item explaining why this product fits the angle (not a generic restatement of the review).
+- Title should read naturally, like "The Best Perfumes for Winter" or "Five Bold Fragrances Worth the Investment".
+- Do not repeat a title/slug already used by this site.
+- Tone: measured, specific, editorial. Avoid hype words.
+
+Output shape:
+{
+  "title": "string",
+  "slug": "kebab-case-slug",
+  "angle": "one-line description of the angle",
+  "intro_markdown": "string",
+  "outro_markdown": "string",
+  "selected": [
+    {"post_slug": "existing-product-slug", "rank": 1, "blurb_markdown": "string"}
+  ]
+}`;
+  const reviewList = reviews
+    .map((r) => `- ${r.product_name} (slug: ${r.slug}, score: ${r.final_score})`)
+    .join('\n');
+  const existing = existingListicles && existingListicles.length
+    ? `\n\nListicles that already exist on this site (avoid repeating these angles / slugs):\n${existingListicles.map((l) => `- ${l.title} (slug: ${l.slug})`).join('\n')}`
+    : '';
+  const user = `Site category: ${category}
+Target listicle length: aim for ${want} items (minimum 3).
+
+Available reviewed products (use ONLY these slugs in "selected"):
+${reviewList}${existing}
+
+Pick an angle, write the listicle. Strict JSON only.`;
+  const { text } = await completeWithFallback({
+    system: sys,
+    messages: [{ role: 'user', content: user }],
+    max_tokens: 2500,
+  });
+  const json = extractJson(text);
+  if (!json || !json.title || !json.slug || !Array.isArray(json.selected)) {
+    throw new Error('LLM listicle output invalid: ' + text.slice(0, 300));
+  }
+  // Normalize
+  json.slug = slugify(json.slug);
+  json.title = String(json.title).trim();
+  json.angle = String(json.angle || '').trim();
+  json.intro_markdown = String(json.intro_markdown || '').trim();
+  json.outro_markdown = String(json.outro_markdown || '').trim();
+  json.selected = json.selected
+    .map((s, i) => ({
+      post_slug: slugify(String(s.post_slug || '')),
+      rank: Number(s.rank) || i + 1,
+      blurb_markdown: String(s.blurb_markdown || '').trim(),
+    }))
+    .filter((s) => s.post_slug && s.blurb_markdown);
+  return json;
+}
+
 export async function siteTaglineAndAbout(category) {
   const sys = `You write short, tasteful editorial copy for independent review sites. Output strict JSON only.`;
   const user = `For a review site focused on the category "${category}", produce:

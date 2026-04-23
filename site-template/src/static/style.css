@@ -97,3 +97,43 @@ footer.site { text-align: center; color: var(--muted); font-size: 13px;
   article.review h1 { font-size: 26px; }
   .container { padding: 22px 16px 60px; }
 }
+
+/* Listicle pages */
+article.listicle .listicle-hero { margin-bottom: 28px; }
+article.listicle .listicle-hero h1 { font-family: var(--font-serif); font-size: 34px; margin: 10px 0 8px; letter-spacing: -0.3px; }
+article.listicle .listicle-meta { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
+article.listicle .listicle-meta .sep { margin: 0 8px; }
+article.listicle .listicle-intro { font-size: 17px; color: var(--fg); }
+article.listicle .listicle-intro p { margin: 0 0 1em; }
+
+.listicle-items { list-style: none; padding: 0; margin: 28px 0 0; counter-reset: none; }
+.listicle-item { display: flex; gap: 18px; align-items: flex-start;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px; margin-bottom: 18px; }
+.listicle-item .rank-badge { flex: 0 0 48px; width: 48px; height: 48px; border-radius: 50%;
+  background: var(--accent); color: var(--card);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 20px; font-family: var(--font-serif); }
+.listicle-item .item-inner { flex: 1; min-width: 0; }
+.listicle-item .item-img { width: 100%; max-width: 280px; height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; background: var(--accent-soft); }
+.listicle-item .item-title { font-family: var(--font-serif); font-size: 21px; margin: 0 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.listicle-item .item-title a { color: var(--fg); }
+.listicle-item .item-blurb { color: var(--fg); font-size: 15px; line-height: 1.6; margin-bottom: 10px; }
+.listicle-item .item-blurb p { margin: 0 0 0.6em; }
+.listicle-item .item-cta { font-size: 14px; color: var(--accent); font-weight: 600; }
+
+.listicle-outro { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--fg); font-size: 16px; }
+
+/* "Featured in" callout on review pages */
+.featured-in { margin-top: 40px; padding: 18px 20px;
+  background: var(--accent-soft); border: 1px solid var(--border);
+  border-radius: 10px; }
+.featured-in h3 { margin: 0 0 10px; font-family: var(--font-serif); font-size: 17px; font-weight: 600; }
+.featured-in-list { list-style: none; padding: 0; margin: 0; }
+.featured-in-list li { padding: 4px 0; font-size: 15px; }
+.featured-in-list a { font-weight: 600; }
+
+@media (max-width: 600px) {
+  .listicle-item { flex-direction: column; gap: 10px; padding: 14px; }
+  .listicle-item .item-img { max-width: 100%; height: 200px; }
+}

@@ -1,0 +1,32 @@
+---
+layout: base.njk
+title: Best Of
+description: Curated roundups of the top-rated products reviewed on this site.
+permalink: /listicles/
+eleventyExcludeFromCollections: true
+---
+<div class="home-lead">
+  <p>Curated roundups. Short picks, pointed reasoning.</p>
+</div>
+
+<section class="latest">
+  <h2>All guides</h2>
+  {% if collections.listicles.length == 0 %}
+    <p class="muted">No guides yet — the first one will appear here soon.</p>
+  {% else %}
+    <div class="grid">
+    {% for l in collections.listicles %}
+      <a class="card" href="{{ l.url | url }}">
+        <div class="card-placeholder"></div>
+        <div class="body">
+          <div class="title">{{ l.data.title }}</div>
+          <div class="meta">
+            <span><time datetime="{{ l.date | date('iso') }}">{{ l.date | date }}</time></span>
+            <span class="tag">{{ l.data.item_count }} picks</span>
+          </div>
+        </div>
+      </a>
+    {% endfor %}
+    </div>
+  {% endif %}
+</section>

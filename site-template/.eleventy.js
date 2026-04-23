@@ -1,4 +1,6 @@
 // 11ty config with SEO helpers.
+import { marked } from "marked";
+
 export default function (eleventyConfig) {
   eleventyConfig.addPassthroughCopy({ "src/static": "static" });
   eleventyConfig.addPassthroughCopy({ "src/images": "images" });
@@ -106,6 +108,16 @@ export default function (eleventyConfig) {
     c.getFilteredByGlob("src/posts/*.md")
       .sort((a, b) => (Number(b.data.final_score) || 0) - (Number(a.data.final_score) || 0))
   );
+
+  eleventyConfig.addCollection("listicles", (c) =>
+    c.getFilteredByGlob("src/listicles/*.md").sort((a, b) => b.date - a.date)
+  );
+
+  // Render a short markdown string to HTML (used for listicle blurbs/outro).
+  eleventyConfig.addFilter("renderMd", (s) => {
+    if (!s) return "";
+    try { return marked.parse(String(s)); } catch { return String(s); }
+  });
 
   return {
     dir: {

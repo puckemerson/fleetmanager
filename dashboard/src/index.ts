@@ -187,11 +187,55 @@ app.patch('/api/sites/:id', requireAuth, async (c) => {
   if (typeof body.status === 'string' && ['active', 'archived', 'paused'].includes(body.status)) {
     updates.push('status = ?'); binds.push(body.status);
   }
+  if (body.listicle_ratio != null) {
+    const r = Number(body.listicle_ratio);
+    if (!Number.isInteger(r) || r < 1 || r > 10000) return c.json({ error: 'invalid listicle_ratio' }, 400);
+    updates.push('listicle_ratio = ?'); binds.push(r);
+  }
   if (updates.length === 0) return c.json({ error: 'nothing to update' }, 400);
   binds.push(id);
   await c.env.DB.prepare(`UPDATE sites SET ${updates.join(', ')} WHERE id = ?`).bind(...binds).run();
   const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first();
   return c.json({ site });
+});
+
+app.get('/api/sites/:id/listicles', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const site = await c.env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  const listicles = await c.env.DB.prepare(
+    `SELECT l.id, l.slug, l.title, l.intro_markdown, l.outro_markdown, l.item_count, l.commit_sha, l.created_at,
+            (SELECT COUNT(*) FROM listicle_items li WHERE li.listicle_id = l.id) AS actual_item_count
+       FROM listicles l WHERE l.site_id = ? ORDER BY l.created_at DESC`
+  ).bind(id).all();
+  const rows = listicles.results ?? [];
+  // Attach items for each listicle
+  const out: any[] = [];
+  for (const l of rows) {
+    const items = await c.env.DB.prepare(
+      `SELECT li.rank, li.blurb_markdown, p.slug AS post_slug, p.product_name, p.final_score
+         FROM listicle_items li JOIN posts p ON p.id = li.post_id
+        WHERE li.listicle_id = ? ORDER BY li.rank`
+    ).bind((l as any).id).all();
+    out.push({ ...l, items: items.results ?? [] });
+  }
+  return c.json({ listicles: out });
+});
+
+app.post('/api/sites/:id/generate-listicle-now', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const site = await c.env.DB.prepare('SELECT id, status FROM sites WHERE id = ?').bind(id).first<any>();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  if (site.status === 'archived') return c.json({ error: 'site archived' }, 400);
+  const postCountRow = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM posts WHERE site_id = ?').bind(id).first<any>();
+  const postCount = Number(postCountRow?.n) || 0;
+  if (postCount < 3) return c.json({ error: `need at least 3 reviews to generate a listicle (have ${postCount})` }, 400);
+  await c.env.DB.prepare(
+    `INSERT INTO jobs (site_id, kind, status, scheduled_for) VALUES (?, 'generate_listicle', 'queued', ?)`
+  ).bind(id, nowMs()).run();
+  return c.json({ ok: true });
 });
 
 app.delete('/api/sites/:id', requireAuth, async (c) => {

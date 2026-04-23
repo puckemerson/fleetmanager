@@ -1,0 +1,27 @@
+{# Rendered on review pages. Scans /src/_data/listicles.json (if present)
+   for listicles that feature this review's slug, and shows a "Featured in"
+   callout linking back. #}
+{%- set currentSlug = slug or page.fileSlug -%}
+{%- set featured = [] -%}
+{%- if listicles and listicles.length > 0 -%}
+  {%- for l in listicles -%}
+    {%- for it in l.items -%}
+      {%- if it.post_slug == currentSlug -%}
+        {%- set featured = (featured.push({ title: l.title, slug: l.slug, rank: it.rank, item_count: l.items.length }), featured) -%}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endfor -%}
+{%- endif -%}
+{%- if featured.length > 0 -%}
+<section class="featured-in">
+  <h3>Featured in</h3>
+  <ul class="featured-in-list">
+    {%- for f in featured -%}
+    <li>
+      <a href="{{ ('/listicles/' + f.slug + '/') | url }}">{{ f.title }}</a>
+      <span class="muted">· #{{ f.rank }} of {{ f.item_count }}</span>
+    </li>
+    {%- endfor -%}
+  </ul>
+</section>
+{%- endif -%}

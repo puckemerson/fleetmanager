@@ -38,6 +38,9 @@ layout: base.njk
     {% if image_source %} · Image: <a href="{{ image_source }}" rel="nofollow noopener">source</a>{% endif %}
   </div>
 
+  {# Featured-in callout: if this review appears in any listicle, show it. #}
+  {% include "partials/featured-in.njk" %}
+
   {# Related reviews: other posts from this site, excluding the current one.
      Priority: same top category name, then newest, capped at 5. #}
   {%- set currentSlug = slug or page.fileSlug -%}

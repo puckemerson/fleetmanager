@@ -1,0 +1,86 @@
+---
+layout: base.njk
+---
+{# Individual listicle page. Front-matter provides: title, slug, date, angle,
+   item_count, items[]. Each item has: rank, post_slug, product_name,
+   final_score, image, blurb_markdown.
+
+   We also resolve each item against collections.reviews to get the canonical
+   review URL (respecting pathPrefix) and image.
+#}
+<a href="{{ '/listicles/' | url }}" class="back-link">← back to all guides</a>
+
+<article class="listicle">
+  <header class="listicle-hero">
+    <h1>{{ title }}</h1>
+    <div class="listicle-meta">
+      <time datetime="{{ date | date('iso') }}">{{ date | date }}</time>
+      <span class="sep">·</span>
+      <span>{{ item_count }} picks</span>
+    </div>
+    {% if intro or (content | length) %}
+    <div class="listicle-intro">
+      {{ content | safe }}
+    </div>
+    {% endif %}
+  </header>
+
+  <ol class="listicle-items">
+    {% for item in items %}
+      {# Resolve review URL + image by matching slug against collections.reviews #}
+      {%- set review = null -%}
+      {%- for r in collections.reviews -%}
+        {%- if r.data.slug == item.post_slug or r.fileSlug == item.post_slug -%}
+          {%- set review = r -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set reviewUrl = review.url if review else ('/posts/' + item.post_slug + '/') -%}
+      {%- set img = (review.data.image if review else item.image) -%}
+      {%- set score = (review.data.final_score if review else item.final_score) -%}
+      <li class="listicle-item">
+        <div class="rank-badge">{{ item.rank }}</div>
+        <div class="item-inner">
+          {% if img %}<a href="{{ reviewUrl | url }}"><img src="{{ img | url }}" alt="{{ item.product_name }}" loading="lazy" width="600" height="360" class="item-img"></a>{% endif %}
+          <div class="item-body">
+            <h2 class="item-title"><a href="{{ reviewUrl | url }}">{{ item.product_name }}</a>
+              {% if score %}<span class="score-badge small">{{ score | round }}</span>{% endif %}
+            </h2>
+            <div class="item-blurb">{{ item.blurb_markdown | renderMd | safe }}</div>
+            <a href="{{ reviewUrl | url }}" class="item-cta">Read full review →</a>
+          </div>
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+
+  {% if outro_markdown %}
+  <div class="listicle-outro">{{ outro_markdown | renderMd | safe }}</div>
+  {% endif %}
+</article>
+
+{# JSON-LD ItemList #}
+{%- set ldItems = [] -%}
+{%- for item in items -%}
+  {%- set review = null -%}
+  {%- for r in collections.reviews -%}
+    {%- if r.data.slug == item.post_slug or r.fileSlug == item.post_slug -%}
+      {%- set review = r -%}
+    {%- endif -%}
+  {%- endfor -%}
+  {%- set reviewPath = review.url if review else ('/posts/' + item.post_slug + '/') -%}
+  {%- set ldItem = {
+    "@type": "ListItem",
+    "position": item.rank,
+    "name": item.product_name,
+    "url": site.url + (reviewPath | url)
+  } -%}
+  {%- set ldItems = (ldItems.push(ldItem), ldItems) -%}
+{%- endfor -%}
+{%- set ldList = {
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "name": title,
+  "itemListElement": ldItems,
+  "url": site.url + (page.url | url)
+} -%}
+<script type="application/ld+json">{{ ldList | jsonStringify | safe }}</script>

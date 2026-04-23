@@ -4,6 +4,7 @@ import { CONFIG, requireSecrets } from './config.js';
 import { d1All, d1First, d1Run } from './d1.js';
 import { scaffoldSite } from './scaffold.js';
 import { generatePost } from './generate.js';
+import { generateListicle } from './listicle.js';
 import { nextRunFrom } from './schedule.js';
 
 const ONCE = process.argv.includes('--once');
@@ -68,6 +69,25 @@ async function runGenerate(job, site) {
     [site.id, post.product_name, post.slug, post.final_score, post.category_scores_json,
      post.image_r2_key, post.image_source_url, post.review_markdown, post.commit_sha, now]
   );
+
+  // Increment the listicle counter. If we've hit the ratio, queue a listicle job
+  // for immediate execution and reset the counter.
+  const ratio = Number(site.listicle_ratio) > 0 ? Number(site.listicle_ratio) : 10;
+  const counter = (Number(site.reviews_since_last_listicle) || 0) + 1;
+  // Only trigger listicles for non-archived sites with at least 3 reviews available.
+  const postCountRow = await d1First(`SELECT COUNT(*) AS n FROM posts WHERE site_id = ?`, [site.id]);
+  const postCount = Number(postCountRow?.n) || 0;
+  if (counter >= ratio && postCount >= 3 && site.status === 'active') {
+    await d1Run(`UPDATE sites SET reviews_since_last_listicle = 0 WHERE id = ?`, [site.id]);
+    await d1Run(
+      `INSERT INTO jobs (site_id, kind, status, scheduled_for) VALUES (?, 'generate_listicle', 'queued', ?)`,
+      [site.id, Date.now()]
+    );
+    log(`[job ${job.id}] reached listicle ratio (${counter}/${ratio}), queued generate_listicle`);
+  } else {
+    await d1Run(`UPDATE sites SET reviews_since_last_listicle = ? WHERE id = ?`, [counter, site.id]);
+  }
+
   // Schedule next run based on site's cron_spec
   if (site.cron_spec && site.status === 'active') {
     const next = nextRunFrom(now, site.cron_spec);
@@ -80,6 +100,17 @@ async function runGenerate(job, site) {
     }
   }
   return { slug: post.slug, score: post.final_score, sha: post.commit_sha };
+}
+
+async function runGenerateListicle(job, site) {
+  if (site.status === 'archived') throw new Error('site archived');
+  if (!site.repo_url) throw new Error('site not scaffolded yet');
+  // Small sites get a smaller listicle.
+  const postCountRow = await d1First(`SELECT COUNT(*) AS n FROM posts WHERE site_id = ?`, [site.id]);
+  const postCount = Number(postCountRow?.n) || 0;
+  const targetItemCount = postCount >= 10 ? 7 : Math.max(3, Math.min(5, postCount));
+  const result = await generateListicle({ site, targetItemCount });
+  return result;
 }
 
 async function tick() {
@@ -101,6 +132,7 @@ async function tick() {
       let result;
       if (job.kind === 'scaffold_site') result = await runScaffold(job, site);
       else if (job.kind === 'generate_post') result = await runGenerate(job, site);
+      else if (job.kind === 'generate_listicle') result = await runGenerateListicle(job, site);
       else throw new Error(`unknown job kind: ${job.kind}`);
       await finishJob(job.id, 'done', null, result);
       log(`[job ${job.id}] done`);
