@@ -9,6 +9,7 @@ layout: base.njk
    review URL (respecting pathPrefix) and image.
 #}
 <a href="{{ '/listicles/' | url }}" class="back-link">← back to all guides</a>
+{% include "partials/affiliate-disclosure.njk" %}
 
 <article class="listicle">
   <header class="listicle-hero">
@@ -46,7 +47,15 @@ layout: base.njk
               {% if score %}<span class="score-badge small">{{ score | round }}</span>{% endif %}
             </h2>
             <div class="item-blurb">{{ item.blurb_markdown | renderMd | safe }}</div>
-            <a href="{{ reviewUrl | url }}" class="item-cta">Read full review →</a>
+            <div class="item-cta-row">
+              <a href="{{ reviewUrl | url }}" class="item-cta">Read full review →</a>
+              {# Small retailer CTA per item, if we have a retailer_link for this post. #}
+              {% set ctaSlug = item.post_slug %}
+              {% set ctaSize = 'sm' %}
+              {% set ctaListicleSlug = slug or page.fileSlug %}
+              {% include "partials/cta.njk" %}
+              {% set ctaListicleSlug = null %}
+            </div>
           </div>
         </div>
       </li>

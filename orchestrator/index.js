@@ -70,6 +70,27 @@ async function runGenerate(job, site) {
      post.image_r2_key, post.image_source_url, post.review_markdown, post.commit_sha, now]
   );
 
+  // Record a retailer_link if we detected one during generation. We key off
+  // the post we just inserted (or upserted). Skip if retailer == 'none' or
+  // no URL was captured.
+  if (post.retailer && post.retailer !== 'none' && post.retailer_url) {
+    const postRow = await d1First(`SELECT id FROM posts WHERE site_id = ? AND slug = ?`, [site.id, post.slug]);
+    if (postRow?.id) {
+      // Dedup by (post_id, retailer): if one already exists, leave it.
+      const existing = await d1First(
+        `SELECT id FROM retailer_links WHERE post_id = ? AND retailer = ?`,
+        [postRow.id, post.retailer]
+      );
+      if (!existing) {
+        await d1Run(
+          `INSERT INTO retailer_links (post_id, retailer, url, created_at) VALUES (?, ?, ?, ?)`,
+          [postRow.id, post.retailer, post.retailer_url, now]
+        );
+        log(`[job ${job.id}] retailer_link: ${post.retailer} <- ${post.retailer_url.slice(0, 80)}`);
+      }
+    }
+  }
+
   // Increment the listicle counter. If we've hit the ratio, queue a listicle job
   // for immediate execution and reset the counter.
   const ratio = Number(site.listicle_ratio) > 0 ? Number(site.listicle_ratio) : 10;

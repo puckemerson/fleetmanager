@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import bcrypt from 'bcryptjs';
+// @ts-ignore: shared JS module, no type declarations
+import { resolveAffiliateUrl, detectRetailer } from '../../shared/affiliate.js';
 
 type Bindings = {
   DB: D1Database;
@@ -259,7 +261,193 @@ app.post('/api/sites/:id/generate-now', requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// --- Affiliate programs ---
+
+app.get('/api/sites/:id/affiliate-programs', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const site = await c.env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, program, config_json, enabled, created_at
+       FROM affiliate_programs WHERE site_id = ? ORDER BY program`
+  ).bind(id).all();
+  return c.json({ programs: results ?? [] });
+});
+
+app.put('/api/sites/:id/affiliate-programs/:program', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  const program = String(c.req.param('program') || '').toLowerCase();
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const valid = ['amazon', 'skimlinks', 'sharesasale', 'shareasale', 'generic'];
+  if (!valid.includes(program)) return c.json({ error: 'invalid program' }, 400);
+  const site = await c.env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid json' }, 400); }
+  const cfg = body?.config && typeof body.config === 'object' ? body.config : {};
+  const enabled = body?.enabled === false ? 0 : 1;
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM affiliate_programs WHERE site_id = ? AND program = ?'
+  ).bind(id, program).first<any>();
+  if (existing) {
+    await c.env.DB.prepare(
+      'UPDATE affiliate_programs SET config_json = ?, enabled = ? WHERE id = ?'
+    ).bind(JSON.stringify(cfg), enabled, existing.id).run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO affiliate_programs (site_id, program, config_json, enabled, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(id, program, JSON.stringify(cfg), enabled, nowMs()).run();
+  }
+  const prog = await c.env.DB.prepare(
+    'SELECT id, program, config_json, enabled, created_at FROM affiliate_programs WHERE site_id = ? AND program = ?'
+  ).bind(id, program).first();
+  return c.json({ program: prog });
+});
+
+app.delete('/api/sites/:id/affiliate-programs/:program', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  const program = String(c.req.param('program') || '').toLowerCase();
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  await c.env.DB.prepare(
+    'DELETE FROM affiliate_programs WHERE site_id = ? AND program = ?'
+  ).bind(id, program).run();
+  return c.json({ ok: true });
+});
+
+app.patch('/api/sites/:id/disclosure', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  let body: any;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid json' }, 400); }
+  const site = await c.env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first<any>();
+  if (!site) return c.json({ error: 'not found' }, 404);
+  const updates: string[] = [];
+  const binds: any[] = [];
+  if (typeof body.enabled === 'boolean' || body.enabled === 0 || body.enabled === 1) {
+    updates.push('affiliate_disclosure_enabled = ?');
+    binds.push(body.enabled ? 1 : 0);
+  }
+  if (typeof body.text === 'string' || body.text === null) {
+    updates.push('affiliate_disclosure_text = ?');
+    binds.push(body.text || null);
+  }
+  if (updates.length === 0) return c.json({ error: 'nothing to update' }, 400);
+  binds.push(id);
+  await c.env.DB.prepare(`UPDATE sites SET ${updates.join(', ')} WHERE id = ?`).bind(...binds).run();
+  const out = await c.env.DB.prepare(
+    'SELECT affiliate_disclosure_enabled, affiliate_disclosure_text FROM sites WHERE id = ?'
+  ).bind(id).first();
+  return c.json({ site: out });
+});
+
+app.get('/api/sites/:id/clicks', requireAuth, async (c) => {
+  const id = Number(c.req.param('id'));
+  if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const days = Math.max(1, Math.min(90, Number(c.req.query('days') || 7)));
+  const since = nowMs() - days * 24 * 60 * 60 * 1000;
+  const total = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM clicks WHERE site_id = ? AND clicked_at >= ?'
+  ).bind(id, since).first<any>();
+  const byRetailer = await c.env.DB.prepare(
+    `SELECT retailer, COUNT(*) AS n FROM clicks
+      WHERE site_id = ? AND clicked_at >= ?
+      GROUP BY retailer ORDER BY n DESC`
+  ).bind(id, since).all();
+  const byPost = await c.env.DB.prepare(
+    `SELECT post_id, COUNT(*) AS n FROM clicks
+      WHERE site_id = ? AND clicked_at >= ? AND post_id IS NOT NULL
+      GROUP BY post_id ORDER BY n DESC LIMIT 20`
+  ).bind(id, since).all();
+  return c.json({
+    days,
+    total: Number(total?.n || 0),
+    by_retailer: byRetailer.results || [],
+    by_post: byPost.results || [],
+  });
+});
+
 // Unknown API routes
 app.all('/api/*', (c) => c.json({ error: 'not found' }, 404));
+
+// --- Click tracker: /go/:site/:post/:retailer or /go/:site/listicle/:listicle/:post/:retailer ---
+
+async function recordAndRedirect(c: any, params: {
+  siteSlug: string;
+  postSlug: string;
+  retailer: string;
+  listicleSlug?: string;
+}): Promise<Response> {
+  const db: D1Database = c.env.DB;
+  const site = await db.prepare('SELECT id, status FROM sites WHERE slug = ?').bind(params.siteSlug).first<any>();
+  if (!site) return c.text('unknown site', 404);
+  const post = await db.prepare('SELECT id FROM posts WHERE site_id = ? AND slug = ?')
+    .bind(site.id, params.postSlug).first<any>();
+  if (!post) return c.text('unknown post', 404);
+  // Retailer link lookup.
+  let linkRow: any = null;
+  if (params.retailer) {
+    linkRow = await db.prepare(
+      'SELECT url FROM retailer_links WHERE post_id = ? AND retailer = ? ORDER BY id DESC LIMIT 1'
+    ).bind(post.id, params.retailer).first<any>();
+  }
+  if (!linkRow) {
+    // Fallback: any retailer_link for the post.
+    linkRow = await db.prepare(
+      'SELECT url, retailer FROM retailer_links WHERE post_id = ? ORDER BY id DESC LIMIT 1'
+    ).bind(post.id).first<any>();
+  }
+  if (!linkRow) return c.text('no retailer link for post', 404);
+  const retailer = linkRow.retailer || params.retailer;
+  // Resolve affiliate URL using the site's programs.
+  const progRows = await db.prepare(
+    `SELECT program, config_json, enabled FROM affiliate_programs WHERE site_id = ? AND enabled = 1`
+  ).bind(site.id).all();
+  const destination = resolveAffiliateUrl({
+    retailer,
+    rawUrl: linkRow.url,
+    programs: progRows.results || [],
+  });
+  // Resolve listicle_id (if any).
+  let listicleId: number | null = null;
+  if (params.listicleSlug) {
+    const l = await db.prepare('SELECT id FROM listicles WHERE site_id = ? AND slug = ?')
+      .bind(site.id, params.listicleSlug).first<any>();
+    listicleId = l?.id ?? null;
+  }
+  // Fire-and-forget insert into clicks.
+  const ua = c.req.header('user-agent') || null;
+  const referer = c.req.header('referer') || null;
+  const country = (c.req.raw.cf as any)?.country || null;
+  const insertPromise = db.prepare(
+    `INSERT INTO clicks (site_id, post_id, listicle_id, retailer, destination_url, user_agent, ip_country, referer, clicked_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(site.id, post.id, listicleId, retailer, destination, ua, country, referer, nowMs()).run();
+  if (c.executionCtx && typeof c.executionCtx.waitUntil === 'function') {
+    c.executionCtx.waitUntil(insertPromise);
+  } else {
+    // Fall back to awaiting (no event ctx in tests).
+    try { await insertPromise; } catch {}
+  }
+  return c.redirect(destination, 302);
+}
+
+app.get('/go/:site/listicle/:listicle/:post/:retailer', async (c) => {
+  return recordAndRedirect(c, {
+    siteSlug: c.req.param('site'),
+    listicleSlug: c.req.param('listicle'),
+    postSlug: c.req.param('post'),
+    retailer: c.req.param('retailer'),
+  });
+});
+
+app.get('/go/:site/:post/:retailer', async (c) => {
+  return recordAndRedirect(c, {
+    siteSlug: c.req.param('site'),
+    postSlug: c.req.param('post'),
+    retailer: c.req.param('retailer'),
+  });
+});
 
 export default app;

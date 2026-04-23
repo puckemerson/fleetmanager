@@ -119,6 +119,23 @@ export default function (eleventyConfig) {
     try { return marked.parse(String(s)); } catch { return String(s); }
   });
 
+  // Friendly retailer display name for CTA buttons.
+  eleventyConfig.addFilter("retailerName", (r) => {
+    const s = String(r || "").toLowerCase();
+    const map = {
+      amazon: "Amazon",
+      sephora: "Sephora",
+      ulta: "Ulta",
+      walmart: "Walmart",
+      target: "Target",
+      bestbuy: "Best Buy",
+      nordstrom: "Nordstrom",
+      ebay: "eBay",
+      etsy: "Etsy",
+    };
+    return map[s] || "retailer";
+  });
+
   return {
     dir: {
       input: "src",

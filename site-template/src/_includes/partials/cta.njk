@@ -1,0 +1,28 @@
+{# CTA button(s) for a review / listicle item.
+   Requires:
+     - ctaSlug: post slug (defaults to current page slug)
+     - ctaSize: 'lg' (default) or 'sm' (used inside listicle items)
+   Looks up retailer_links[ctaSlug].links from src/_data/retailer_links.json.
+   If no link exists for that slug, renders nothing.
+   Button points at the dashboard tracker: /go/:site_slug/:post_slug/:retailer
+   which records the click and 302s to the resolved affiliate URL.
+#}
+{%- set ctaSlug = ctaSlug or slug or page.fileSlug -%}
+{%- set ctaSize = ctaSize or 'lg' -%}
+{%- set ctaEntry = retailer_links[ctaSlug] -%}
+{%- if ctaEntry and ctaEntry.links and ctaEntry.links.length > 0 -%}
+  {%- set primary = ctaEntry.links[0] -%}
+  {%- set rName = primary.retailer | retailerName -%}
+  {%- set trackerBase = "https://fleetmanager.puckemerson.workers.dev/go/" + site.slug -%}
+  {%- if ctaListicleSlug -%}
+    {%- set trackerUrl = trackerBase + "/listicle/" + ctaListicleSlug + "/" + ctaSlug + "/" + primary.retailer -%}
+  {%- else -%}
+    {%- set trackerUrl = trackerBase + "/" + ctaSlug + "/" + primary.retailer -%}
+  {%- endif -%}
+  <div class="cta-wrap cta-{{ ctaSize }}">
+    <a href="{{ trackerUrl }}" class="cta-button cta-{{ ctaSize }}" rel="nofollow sponsored" target="_blank">
+      Check price on {{ rName }}
+      <span class="cta-arrow" aria-hidden="true">→</span>
+    </a>
+  </div>
+{%- endif -%}

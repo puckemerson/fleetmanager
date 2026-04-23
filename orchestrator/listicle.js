@@ -77,6 +77,29 @@ function yamlScalar(v) {
   return yamlString(String(v));
 }
 
+// Rebuild src/_data/retailer_links.json from D1 for this site.
+async function writeRetailerLinksDataFile(workRepo, siteId) {
+  const rows = await d1All(
+    `SELECT rl.retailer AS retailer, rl.url AS url, p.slug AS post_slug
+       FROM retailer_links rl JOIN posts p ON p.id = rl.post_id
+      WHERE p.site_id = ?`,
+    [siteId]
+  );
+  const bySlug = new Map();
+  for (const r of rows) {
+    if (!bySlug.has(r.post_slug)) bySlug.set(r.post_slug, { links: [] });
+    bySlug.get(r.post_slug).links.push({
+      retailer: r.retailer,
+      raw_url: r.url,
+      affiliate_url: r.url,
+    });
+  }
+  const payload = Object.fromEntries(bySlug.entries());
+  const outPath = path.join(workRepo, 'src', '_data', 'retailer_links.json');
+  await fsp.mkdir(path.dirname(outPath), { recursive: true });
+  await fsp.writeFile(outPath, JSON.stringify(payload, null, 2) + '\n');
+}
+
 // Write /src/_data/listicles.json containing the full listicle set for this site,
 // so 11ty can render "Featured in" callouts on review pages without rebuilding them.
 async function writeListiclesDataFile(workRepo, siteId) {
@@ -232,6 +255,9 @@ export async function generateListicle({ site, targetItemCount }) {
 
   // Refresh the listicles.json data file so review pages pick up cross-links.
   await writeListiclesDataFile(workRepo, siteId);
+  // Also refresh retailer_links.json in case it's stale.
+  try { await writeRetailerLinksDataFile(workRepo, siteId); }
+  catch (err) { console.log(`[listicle] retailer_links.json warning: ${err.message}`); }
 
   // 7. Commit + push.
   const git = simpleGit(workRepo);

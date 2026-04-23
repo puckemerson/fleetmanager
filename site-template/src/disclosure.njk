@@ -1,0 +1,39 @@
+---
+layout: base.njk
+title: Disclosure
+permalink: /disclosure/
+eleventyExcludeFromCollections: true
+---
+<article class="page disclosure-page">
+  <h1>Affiliate Disclosure</h1>
+
+  {% if site.affiliate_disclosure_enabled %}
+    <p class="lead">
+      {{ site.affiliate_disclosure_text or "We may earn a commission from qualifying purchases made through links on this page. This doesn't affect our reviews." }}
+    </p>
+  {% else %}
+    <p class="lead">
+      At the moment, {{ site.title }} does not participate in any affiliate programs. If and when that changes, this page and a small notice on relevant reviews will say so clearly.
+    </p>
+  {% endif %}
+
+  <h2>How we make money</h2>
+  <p>
+    When affiliate programs are active, some outbound links on {{ site.title }} may be affiliate links. If you click one of those links and buy something from the retailer, we may receive a small commission at no extra cost to you. We only link to retailers where the product is actually sold.
+  </p>
+
+  <h2>Editorial independence</h2>
+  <p>
+    Affiliate relationships do <strong>not</strong> influence our scoring. The rankings, category scores, and written reviews you see on this site are the product of our own research and synthesis. We don't accept payment for favorable coverage, and we don't change a score to chase a commission.
+  </p>
+
+  <h2>FTC compliance</h2>
+  <p>
+    As required by the U.S. Federal Trade Commission's Endorsement Guides, we plainly disclose our material connections. When affiliate links are live, every review and listicle page carrying such a link includes a visible disclosure, and every affiliate link itself is marked with <code>rel="nofollow sponsored"</code>. This page is always linked from the footer.
+  </p>
+
+  <h2>Questions</h2>
+  <p>
+    If anything here is unclear, or you spot a link that looks like it ought to be disclosed but isn't, tell us. We'll fix it.
+  </p>
+</article>

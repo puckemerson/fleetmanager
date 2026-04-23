@@ -2,6 +2,7 @@
 layout: base.njk
 ---
 <a href="{{ '/' | url }}" class="back-link">← back to all reviews</a>
+{% include "partials/affiliate-disclosure.njk" %}
 <article class="review">
   {% if image %}<img src="{{ image | url }}" alt="{{ product_name }}" class="hero" width="1200" height="630" fetchpriority="high">{% endif %}
   <h1>{{ product_name }}</h1>
@@ -13,9 +14,19 @@ layout: base.njk
     </div>
   </div>
 
+  {# Primary CTA: above the scoring breakdown, right after the hero + lead. #}
+  {% set ctaSlug = slug or page.fileSlug %}
+  {% set ctaSize = 'lg' %}
+  {% include "partials/cta.njk" %}
+
   <div class="body">
     {{ content | safe }}
   </div>
+
+  {# Secondary CTA: after the review body, before the scoring breakdown. #}
+  {% set ctaSlug = slug or page.fileSlug %}
+  {% set ctaSize = 'lg' %}
+  {% include "partials/cta.njk" %}
 
   {% if categories and categories.length %}
   <div class="breakdown">

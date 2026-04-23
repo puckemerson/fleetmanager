@@ -1,0 +1,9 @@
+{# Small affiliate disclosure banner. Rendered only when site.affiliate_disclosure_enabled
+   is truthy. Uses site.affiliate_disclosure_text if set, otherwise the default. #}
+{%- if site.affiliate_disclosure_enabled -%}
+  {%- set disclosureText = site.affiliate_disclosure_text or "We may earn a commission from qualifying purchases made through links on this page. This doesn't affect our reviews." -%}
+  <div class="affiliate-disclosure" role="note">
+    <span class="affiliate-disclosure-icon" aria-hidden="true">ⓘ</span>
+    <span>{{ disclosureText }} <a href="{{ '/disclosure/' | url }}">Learn more</a>.</span>
+  </div>
+{%- endif -%}

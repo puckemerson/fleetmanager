@@ -8,6 +8,7 @@ import { d1All } from './d1.js';
 import { proposeProducts, synthesizeReview } from './llm.js';
 import { searchWeb, fetchPage, extractPage, findProductImage } from './search.js';
 import { repoGitUrl } from './github.js';
+import { detectRetailer } from '../shared/affiliate.js';
 
 function slugify(s) {
   return String(s || '').toLowerCase().trim()
@@ -132,6 +133,14 @@ export async function generatePost({ site }) {
     imageSource = img.sourceUrl;
   }
 
+  // 8a. Detect retailer from the image source URL (the page we scraped).
+  // If the URL points at Wikipedia / DDG / similar non-retailer source, we
+  // record 'none' and skip the retailer_link insert downstream.
+  let retailer = 'none';
+  if (imageSource) {
+    try { retailer = detectRetailer(imageSource); } catch { retailer = 'generic'; }
+  }
+
   // 9. Write markdown
   const now = new Date();
   const fm = {
@@ -149,6 +158,18 @@ export async function generatePost({ site }) {
   const frontMatter = toYamlFrontMatter(fm);
   const md = `---\n${frontMatter}---\n\n${review.markdown.trim()}\n`;
   await fsp.writeFile(mdPath, md);
+
+  // 9a. Rebuild src/_data/retailer_links.json from D1 + the new post's link.
+  // We include the new post here synthetically (it's not yet inserted into D1),
+  // so the first render of this review page already has a CTA button.
+  try {
+    const newLink = (retailer && retailer !== 'none' && imageSource)
+      ? { post_slug: postSlug, retailer, url: imageSource }
+      : null;
+    await writeRetailerLinksDataFile(workRepo, siteId, newLink);
+  } catch (err) {
+    console.log(`[generate] retailer_links.json warning: ${err.message}`);
+  }
 
   // 10. Commit and push
   const git = simpleGit(workRepo);
@@ -170,7 +191,46 @@ export async function generatePost({ site }) {
     image_source_url: imageSource,
     review_markdown: md,
     commit_sha: commitSha,
+    retailer,
+    retailer_url: imageSource,
   };
+}
+
+// Build and write src/_data/retailer_links.json keyed by post slug.
+// Pulls all retailer_links already in D1 for this site and optionally
+// appends a "pending" entry for a post that isn't inserted yet.
+async function writeRetailerLinksDataFile(workRepo, siteId, extraLink) {
+  const rows = await d1All(
+    `SELECT rl.retailer AS retailer, rl.url AS url, p.slug AS post_slug
+       FROM retailer_links rl JOIN posts p ON p.id = rl.post_id
+      WHERE p.site_id = ?`,
+    [siteId]
+  );
+  const bySlug = new Map();
+  for (const r of rows) {
+    if (!bySlug.has(r.post_slug)) bySlug.set(r.post_slug, { links: [] });
+    bySlug.get(r.post_slug).links.push({
+      retailer: r.retailer,
+      raw_url: r.url,
+      // Template-time affiliate resolution isn't done here; the CTA button
+      // instead points at the dashboard /go/... tracker which resolves at
+      // click time. We keep raw_url in the data file for debugging.
+      affiliate_url: r.url,
+    });
+  }
+  if (extraLink) {
+    const { post_slug, retailer, url } = extraLink;
+    if (!bySlug.has(post_slug)) bySlug.set(post_slug, { links: [] });
+    // Avoid duplicating if somehow already present.
+    const existing = bySlug.get(post_slug).links.find((l) => l.retailer === retailer);
+    if (!existing) {
+      bySlug.get(post_slug).links.push({ retailer, raw_url: url, affiliate_url: url });
+    }
+  }
+  const payload = Object.fromEntries(bySlug.entries());
+  const outPath = path.join(workRepo, 'src', '_data', 'retailer_links.json');
+  await fsp.mkdir(path.dirname(outPath), { recursive: true });
+  await fsp.writeFile(outPath, JSON.stringify(payload, null, 2) + '\n');
 }
 
 async function reconcileSiteConfig(workRepo, site) {
@@ -189,6 +249,8 @@ async function reconcileSiteConfig(workRepo, site) {
     url: inferredOrigin || cur.url,
     about: site.about_text || cur.about,
     analytics_snippet: site.analytics_snippet || cur.analytics_snippet || '',
+    affiliate_disclosure_enabled: Number(site.affiliate_disclosure_enabled) ? 1 : 0,
+    affiliate_disclosure_text: site.affiliate_disclosure_text || '',
   };
   // Only write if something changed to avoid spurious commits.
   const before = JSON.stringify(cur);

@@ -261,6 +261,15 @@ async function renderDetail() {
         <div id="listicles-list" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
       </div>
 
+      <div class="panel" id="affiliate-panel">
+        <div class="row">
+          <strong>Affiliate</strong>
+          <div class="spacer"></div>
+          <span class="muted" id="affiliate-clicks-summary">…</span>
+        </div>
+        <div id="affiliate-body" style="margin-top: 10px;"><span class="muted">Loading…</span></div>
+      </div>
+
       <div class="panel">
         <strong>Posts (${posts.length})</strong>
         <div id="posts-list" style="margin-top: 10px;">
@@ -338,6 +347,14 @@ async function renderDetail() {
         if (list) list.innerHTML = `<div class="error">${esc(err.message)}</div>`;
       }
     })();
+    // Affiliate panel
+    (async () => {
+      try { await renderAffiliatePanel(site); }
+      catch (err) {
+        const body = $('affiliate-body');
+        if (body) body.innerHTML = `<div class="error">${esc(err.message)}</div>`;
+      }
+    })();
     $('archive').onclick = async () => {
       if (!confirm('Archive this site? (Repo will remain.)')) return;
       try { await api(`/api/sites/${site.id}`, { method: 'DELETE' }); state.view = 'list'; render(); }
@@ -346,6 +363,152 @@ async function renderDetail() {
   } catch (err) {
     $('detail').innerHTML = `<div class="panel error">${esc(err.message)}</div>`;
   }
+}
+
+async function renderAffiliatePanel(site) {
+  const [progs, clicks] = await Promise.all([
+    api(`/api/sites/${site.id}/affiliate-programs`),
+    api(`/api/sites/${site.id}/clicks?days=7`).catch(() => ({ total: 0, by_retailer: [] })),
+  ]);
+  const sum = $('affiliate-clicks-summary');
+  if (sum) sum.textContent = `${clicks.total || 0} click${clicks.total === 1 ? '' : 's'} (last 7 days)`;
+  const programs = progs.programs || [];
+  const discEnabled = !!Number(site.affiliate_disclosure_enabled);
+  const discText = site.affiliate_disclosure_text || '';
+
+  const progsRows = programs.map((p) => {
+    const cfg = safeParse(p.config_json) || {};
+    return `
+      <tr>
+        <td><code>${esc(p.program)}</code></td>
+        <td style="font-size:12px; color: var(--muted, #888);">${esc(JSON.stringify(cfg))}</td>
+        <td>${p.enabled ? '<span class="tag">on</span>' : '<span class="tag">off</span>'}</td>
+        <td><button class="btn secondary small" data-del-prog="${esc(p.program)}">Remove</button></td>
+      </tr>`;
+  }).join('');
+
+  $('affiliate-body').innerHTML = `
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+      <div>
+        <label style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="disc-toggle" ${discEnabled ? 'checked' : ''}>
+          <span><strong>Show affiliate disclosure</strong></span>
+        </label>
+        <div class="muted" style="margin-top: 4px; font-size: 13px;">
+          When on, every review + listicle page gets a small disclosure banner. Legally required once any real affiliate link is live.
+        </div>
+        <textarea id="disc-text" rows="2" style="width: 100%; margin-top: 8px; font-size: 13px;" placeholder="(Optional) custom disclosure text. Leave blank for default.">${esc(discText)}</textarea>
+        <button class="btn small" id="save-disc" style="margin-top: 6px;">Save disclosure</button>
+      </div>
+
+      <div>
+        <strong>Configured programs</strong>
+        ${programs.length === 0
+          ? '<div class="muted" style="margin-top: 6px;">No programs configured. Links still render (as /go/ tracker URLs) but redirect to the raw retailer URL.</div>'
+          : `<table style="margin-top: 6px;"><thead><tr><th>program</th><th>config</th><th>state</th><th></th></tr></thead><tbody>${progsRows}</tbody></table>`}
+        <details style="margin-top: 10px;">
+          <summary style="cursor:pointer; font-weight: 600;">+ Add / update program</summary>
+          <form id="add-prog" style="margin-top: 8px;">
+            <div class="form-row">
+              <label>Program</label>
+              <select id="new-prog-kind">
+                <option value="amazon">amazon</option>
+                <option value="skimlinks">skimlinks</option>
+                <option value="sharesasale">sharesasale</option>
+                <option value="generic">generic</option>
+              </select>
+            </div>
+            <div class="form-row" id="prog-fields">
+              <!-- fields injected per program kind -->
+            </div>
+            <button type="submit" class="btn small">Save program</button>
+          </form>
+        </details>
+      </div>
+
+      ${clicks.by_retailer && clicks.by_retailer.length > 0 ? `
+      <div>
+        <strong>Clicks (last 7 days)</strong>
+        <table style="margin-top: 6px;"><thead><tr><th>retailer</th><th>count</th></tr></thead>
+          <tbody>${clicks.by_retailer.map((r) => `<tr><td>${esc(r.retailer)}</td><td>${r.n}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      ` : ''}
+    </div>
+  `;
+
+  // Program fields injector
+  const kindSel = document.getElementById('new-prog-kind');
+  const fieldsDiv = document.getElementById('prog-fields');
+  function renderProgFields() {
+    const k = kindSel.value;
+    if (k === 'amazon') {
+      fieldsDiv.innerHTML = `<label>Associate tag</label><input id="f-tag" placeholder="will-20" required>`;
+    } else if (k === 'skimlinks') {
+      fieldsDiv.innerHTML = `<label>Skimlinks site id</label><input id="f-siteid" placeholder="123456" required>`;
+    } else if (k === 'sharesasale') {
+      fieldsDiv.innerHTML = `
+        <label>User ID</label><input id="f-user" required>
+        <label style="margin-top:6px;">Merchant ID</label><input id="f-merchant" required>
+        <label style="margin-top:6px;">Banner ID (optional)</label><input id="f-banner">`;
+    } else {
+      fieldsDiv.innerHTML = `<label>Prefix URL (raw URL will be appended URL-encoded)</label><input id="f-prefix" placeholder="https://example.com/r?u=">`;
+    }
+  }
+  if (kindSel && fieldsDiv) {
+    kindSel.addEventListener('change', renderProgFields);
+    renderProgFields();
+  }
+
+  // Delete program handlers
+  document.querySelectorAll('[data-del-prog]').forEach((btn) => {
+    btn.onclick = async () => {
+      if (!confirm(`Remove program '${btn.dataset.delProg}'?`)) return;
+      try { await api(`/api/sites/${site.id}/affiliate-programs/${btn.dataset.delProg}`, { method: 'DELETE' }); renderDetail(); }
+      catch (err) { alert(err.message); }
+    };
+  });
+
+  // Save disclosure
+  const saveBtn = $('save-disc');
+  if (saveBtn) saveBtn.onclick = async () => {
+    try {
+      await api(`/api/sites/${site.id}/disclosure`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled: $('disc-toggle').checked,
+          text: $('disc-text').value.trim() || null,
+        }),
+      });
+      renderDetail();
+    } catch (err) { alert(err.message); }
+  };
+
+  // Add program
+  const addForm = document.getElementById('add-prog');
+  if (addForm) addForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const kind = kindSel.value;
+    let config = {};
+    if (kind === 'amazon') config.associate_tag = document.getElementById('f-tag').value.trim();
+    else if (kind === 'skimlinks') config.site_id = document.getElementById('f-siteid').value.trim();
+    else if (kind === 'sharesasale') {
+      config.user_id = document.getElementById('f-user').value.trim();
+      config.merchant_id = document.getElementById('f-merchant').value.trim();
+      const banner = document.getElementById('f-banner').value.trim();
+      if (banner) config.banner_id = banner;
+    } else {
+      const pref = document.getElementById('f-prefix').value.trim();
+      if (pref) config.prefix = pref;
+    }
+    try {
+      await api(`/api/sites/${site.id}/affiliate-programs/${kind}`, {
+        method: 'PUT',
+        body: JSON.stringify({ config, enabled: true }),
+      });
+      renderDetail();
+    } catch (err) { alert(err.message); }
+  };
 }
 
 function postCard(p, site) {
