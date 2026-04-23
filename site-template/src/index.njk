@@ -1,0 +1,21 @@
+---
+layout: base.njk
+title: Home
+---
+<div class="grid">
+{% for review in collections.reviews %}
+  <a class="card" href="{{ review.url | url }}">
+    {% if review.data.image %}<img src="{{ review.data.image | url }}" alt="{{ review.data.product_name }}">{% else %}<div style="height:180px;background:var(--accent-soft);"></div>{% endif %}
+    <div class="body">
+      <div class="title">{{ review.data.product_name }}</div>
+      <div class="meta">
+        <span>{{ review.date | date }}</span>
+        <span class="score-badge">{{ review.data.final_score | round }}</span>
+      </div>
+    </div>
+  </a>
+{% endfor %}
+{% if collections.reviews.length == 0 %}
+<p style="grid-column: 1/-1; color: var(--muted); text-align:center; padding: 40px 0;">No reviews yet — the first one will appear here soon.</p>
+{% endif %}
+</div>

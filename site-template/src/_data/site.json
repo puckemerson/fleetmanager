@@ -1,0 +1,6 @@
+{
+  "title": "SITE_TITLE",
+  "tagline": "SITE_TAGLINE",
+  "category": "SITE_CATEGORY",
+  "pathPrefix": "/SITE_SLUG/"
+}

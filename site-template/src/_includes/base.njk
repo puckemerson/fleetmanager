@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if title %}{{ title }} · {% endif %}{{ site.title }}</title>
+<meta name="description" content="{{ description or site.tagline }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=FONT_SANS_QS&family=FONT_SERIF_QS&display=swap">
+<link rel="stylesheet" href="{{ '/_theme.css' | url }}">
+<link rel="stylesheet" href="{{ '/static/style.css' | url }}">
+</head>
+<body>
+<header class="site">
+  <h1><a href="{{ '/' | url }}">{{ site.title }}</a></h1>
+  <p>{{ site.tagline }}</p>
+  <nav>
+    <a href="{{ '/' | url }}">Home</a>
+    <a href="{{ '/about/' | url }}">About</a>
+  </nav>
+</header>
+<div class="container">
+{{ content | safe }}
+</div>
+<footer class="site">
+  <div>{{ site.title }} · independent reviews</div>
+</footer>
+</body>
+</html>

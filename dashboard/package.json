@@ -1,0 +1,19 @@
+{
+  "name": "fleetmanager-dashboard",
+  "version": "1.0.0",
+  "description": "FleetManager dashboard worker",
+  "main": "src/index.ts",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.12.14"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260423.1",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.84.1"
+  }
+}

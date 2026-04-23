@@ -1,0 +1,12 @@
+/* theme vars — overwritten by scaffold */
+:root {
+  --bg: #fafaf7;
+  --fg: #1f1f1f;
+  --muted: #6a6a6a;
+  --accent: #8a3b2e;
+  --accent-soft: #eadcd6;
+  --border: #e1ddd3;
+  --card: #ffffff;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-serif: "Lora", Georgia, serif;
+}

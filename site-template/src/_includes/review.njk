@@ -1,0 +1,40 @@
+---
+layout: base.njk
+---
+<a href="{{ '/' | url }}" class="back-link">← back to all reviews</a>
+<article class="review">
+  {% if image %}<img src="{{ image | url }}" alt="{{ product_name }}" class="hero">{% endif %}
+  <h1>{{ product_name }}</h1>
+  <div class="lead">
+    <div class="score">{{ final_score | round }}</div>
+    <div class="summary-meta">
+      <div><strong>{{ product_name }}</strong></div>
+      <div>Reviewed on {{ date | date }}</div>
+    </div>
+  </div>
+
+  <div class="body">
+    {{ content | safe }}
+  </div>
+
+  {% if categories and categories.length %}
+  <div class="breakdown">
+    <h3>Scoring breakdown</h3>
+    {% for cat in categories %}
+    <div class="cat">
+      <div class="cat-top">
+        <span class="cat-name">{{ cat.name }}</span>
+        <span><span class="cat-weight">weight {{ (cat.weight * 100) | round }}%</span> · <span class="cat-score">{{ cat.score | round }}</span></span>
+      </div>
+      <div class="cat-bar"><div class="cat-bar-fill" style="width: {{ cat.score }}%;"></div></div>
+      {% if cat.rationale %}<div class="cat-rationale">{{ cat.rationale }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    Final score: <strong>{{ final_score | round }}/100</strong>
+    {% if image_source %} · Image: <a href="{{ image_source }}">source</a>{% endif %}
+  </div>
+</article>

@@ -1,0 +1,15 @@
+{
+  "name": "fleetmanager-orchestrator",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "once": "node index.js --once"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "cheerio": "^1.0.0",
+    "simple-git": "^3.28.0"
+  }
+}

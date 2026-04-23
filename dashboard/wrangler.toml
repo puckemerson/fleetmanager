@@ -1,0 +1,12 @@
+name = "fleetmanager"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fleetmanager-db"
+database_id = "0827198b-69cf-452c-95a2-18a05ca0a715"
