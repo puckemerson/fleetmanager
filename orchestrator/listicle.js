@@ -159,6 +159,8 @@ export async function generateListicle({ site, targetItemCount }) {
   // 3. Ask the LLM for an angle + selection. Retry once with a harder
   //    anti-hallucination instruction if fewer than 3 valid items come back.
   const validSlugSet = new Set(reviews.map((r) => r.slug));
+  // Required floor for a valid listicle. Tiny sites (< 5 reviews) relax to 3.
+  const requiredFloor = reviews.length >= 5 ? 5 : 3;
   let llmOut;
   let validSelected = [];
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -166,14 +168,14 @@ export async function generateListicle({ site, targetItemCount }) {
       category,
       reviews: reviews.map((r) => ({ slug: r.slug, product_name: r.product_name, final_score: r.final_score })),
       existingListicles,
-      targetItemCount: targetItemCount || Math.min(5, reviews.length),
+      targetItemCount: targetItemCount || Math.min(15, reviews.length),
     });
     validSelected = llmOut.selected.filter((s) => validSlugSet.has(s.post_slug));
-    if (validSelected.length >= 3) break;
-    console.log(`[listicle] attempt ${attempt + 1}: only ${validSelected.length} valid selections, retrying with stricter guard`);
+    if (validSelected.length >= requiredFloor) break;
+    console.log(`[listicle] attempt ${attempt + 1}: only ${validSelected.length} valid selections (need >= ${requiredFloor}), retrying with stricter guard`);
   }
-  if (validSelected.length < 3) {
-    throw new Error(`LLM produced fewer than 3 valid selections after retry (got ${validSelected.length})`);
+  if (validSelected.length < requiredFloor) {
+    throw new Error(`LLM produced fewer than ${requiredFloor} valid selections after retry (got ${validSelected.length})`);
   }
   // Dedupe and re-rank sequentially.
   const seen = new Set();

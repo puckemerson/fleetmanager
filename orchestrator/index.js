@@ -30,23 +30,35 @@ async function finishJob(jobId, status, error, result) {
   );
 }
 
+// Number of posts we want in the initial seed burst for a new site.
+const SEED_BURST_TARGET = 10;
+// Stagger gap between burst posts (seconds). Stays well under API rate limits
+// while still getting a new site populated inside an hour or so.
+const SEED_BURST_GAP_SECONDS = 60;
+
 async function runScaffold(job, site) {
   const out = await scaffoldSite({ slug: site.slug, category: site.product_category });
-  // Update site row with repo_url, site_url, theme_json, SEO fields.
   const now = Date.now();
-  const next = nextRunFrom(now, site.cron_spec);
+  // Mark the site as being in seed burst mode. next_run_at is intentionally
+  // left null: the cron-based scheduler skips sites with seed_burst_complete=0
+  // so it won't double-queue while the burst is running.
   await d1Run(
-    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, site_title = ?, tagline = ?, about_text = ?, next_run_at = ? WHERE id = ?`,
-    [out.repo_url, out.site_url, out.theme_json, out.site_title || null, out.tagline || null, out.about_text || null, next, site.id]
+    `UPDATE sites SET repo_url = ?, site_url = ?, theme_json = ?, site_title = ?, tagline = ?, about_text = ?, next_run_at = NULL, seed_burst_complete = 0 WHERE id = ?`,
+    [out.repo_url, out.site_url, out.theme_json, out.site_title || null, out.tagline || null, out.about_text || null, site.id]
   );
-  // Queue first generate_post if a schedule is set
-  if (next) {
-    await d1Run(
+  // Queue the full seed burst of generate_post jobs, staggered so we don't
+  // hammer the APIs. First one fires in ~30s to give Pages a moment to wake up.
+  const queued = [];
+  for (let i = 0; i < SEED_BURST_TARGET; i++) {
+    const scheduledFor = now + (30 + i * SEED_BURST_GAP_SECONDS) * 1000;
+    const r = await d1Run(
       `INSERT INTO jobs (site_id, kind, status, scheduled_for) VALUES (?, 'generate_post', 'queued', ?)`,
-      [site.id, next]
+      [site.id, scheduledFor]
     );
+    queued.push(r.lastRowId);
   }
-  return out;
+  log(`[job ${job.id}] seed burst: queued ${queued.length} generate_post jobs`);
+  return { ...out, seed_burst_queued: queued.length };
 }
 
 async function runGenerate(job, site) {
@@ -109,7 +121,31 @@ async function runGenerate(job, site) {
     await d1Run(`UPDATE sites SET reviews_since_last_listicle = ? WHERE id = ?`, [counter, site.id]);
   }
 
-  // Schedule next run based on site's cron_spec
+  // Seed burst bookkeeping. If this site is mid-burst and we've just crossed
+  // the SEED_BURST_TARGET threshold, flip seed_burst_complete=1 and seed the
+  // normal cron cadence (next_run_at). We do NOT queue a new generate_post
+  // here during burst; the burst jobs were all queued up-front by scaffold.
+  const inSeedBurst = Number(site.seed_burst_complete) === 0;
+  if (inSeedBurst) {
+    if (postCount >= SEED_BURST_TARGET && site.status === 'active') {
+      const next = site.cron_spec ? nextRunFrom(now, site.cron_spec) : null;
+      await d1Run(
+        `UPDATE sites SET seed_burst_complete = 1, next_run_at = ? WHERE id = ?`,
+        [next, site.id]
+      );
+      if (next) {
+        await d1Run(
+          `INSERT INTO jobs (site_id, kind, status, scheduled_for) VALUES (?, 'generate_post', 'queued', ?)`,
+          [site.id, next]
+        );
+      }
+      log(`[job ${job.id}] seed burst complete (${postCount}/${SEED_BURST_TARGET}), resumed cron cadence`);
+    }
+    // Mid-burst: do not schedule via cron, the remaining burst jobs are already queued.
+    return { slug: post.slug, score: post.final_score, sha: post.commit_sha, burst_progress: `${postCount}/${SEED_BURST_TARGET}` };
+  }
+
+  // Schedule next run based on site's cron_spec (non-burst path).
   if (site.cron_spec && site.status === 'active') {
     const next = nextRunFrom(now, site.cron_spec);
     if (next) {
@@ -126,10 +162,15 @@ async function runGenerate(job, site) {
 async function runGenerateListicle(job, site) {
   if (site.status === 'archived') throw new Error('site archived');
   if (!site.repo_url) throw new Error('site not scaffolded yet');
-  // Small sites get a smaller listicle.
+  // Give the curator a rough target; the prompt allows 5-15 items (3+ on tiny sites),
+  // and tells it to let the angle — not the target — decide the final length.
   const postCountRow = await d1First(`SELECT COUNT(*) AS n FROM posts WHERE site_id = ?`, [site.id]);
   const postCount = Number(postCountRow?.n) || 0;
-  const targetItemCount = postCount >= 10 ? 7 : Math.max(3, Math.min(5, postCount));
+  let targetItemCount;
+  if (postCount >= 15) targetItemCount = 10;
+  else if (postCount >= 10) targetItemCount = 7;
+  else if (postCount >= 5) targetItemCount = 5;
+  else targetItemCount = Math.max(3, postCount);
   const result = await generateListicle({ site, targetItemCount });
   return result;
 }

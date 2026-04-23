@@ -165,7 +165,7 @@ app.post('/api/sites', requireAuth, async (c) => {
 app.get('/api/sites/:id', requireAuth, async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isInteger(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
-  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first();
+  const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<any>();
   if (!site) return c.json({ error: 'not found' }, 404);
   const posts = await c.env.DB.prepare(
     'SELECT id, product_name, slug, final_score, category_scores_json, image_source_url, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 50'
@@ -173,6 +173,14 @@ app.get('/api/sites/:id', requireAuth, async (c) => {
   const jobs = await c.env.DB.prepare(
     'SELECT id, kind, status, scheduled_for, started_at, finished_at, error FROM jobs WHERE site_id = ? ORDER BY id DESC LIMIT 20'
   ).bind(id).all();
+  // Augment site with post_count so the UI can render "Seed burst: N/10".
+  const postCountRow = await c.env.DB.prepare('SELECT COUNT(*) AS n FROM posts WHERE site_id = ?').bind(id).first<any>();
+  (site as any).post_count = Number(postCountRow?.n || 0);
+  // Pending burst generate_post jobs still in the queue (for UI progress).
+  const pendingRow = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM jobs WHERE site_id = ? AND kind = 'generate_post' AND status = 'queued'"
+  ).bind(id).first<any>();
+  (site as any).pending_burst_jobs = Number(pendingRow?.n || 0);
   return c.json({ site, posts: posts.results ?? [], jobs: jobs.results ?? [] });
 });
 

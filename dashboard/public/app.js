@@ -124,14 +124,21 @@ async function renderList() {
       const theme = safeParse(s.theme_json);
       const siteUrl = s.site_url ? `<a href="${esc(s.site_url)}" target="_blank">${esc(s.site_url)}</a>` : '<span class="muted">not yet deployed</span>';
       const repo = s.repo_url ? `<a href="${esc(s.repo_url)}" target="_blank">repo</a>` : '';
+      const inBurst = Number(s.seed_burst_complete) === 0;
+      const burstBadge = inBurst
+        ? `<span class="tag" style="background:#fef3c7;color:#92400e;">seed burst ${Math.min(Number(s.post_count||0), 10)}/10</span>`
+        : '';
+      const scheduleMeta = inBurst
+        ? `seed burst in progress · ${s.post_count || 0} posts · last: ${fmtTime(s.last_post_at)}`
+        : `schedule: <code>${esc(s.cron_spec || 'none')}</code> · next run: ${relFuture(s.next_run_at)} · ${s.post_count || 0} posts · last: ${fmtTime(s.last_post_at)}`;
       return `
         <div class="site-card" data-id="${s.id}">
-          <div class="name">${esc(s.slug)} <span class="tag">${esc(s.product_category)}</span> <span class="tag">${esc(s.status)}</span></div>
+          <div class="name">${esc(s.slug)} <span class="tag">${esc(s.product_category)}</span> <span class="tag">${esc(s.status)}</span> ${burstBadge}</div>
           <div class="meta">
             ${siteUrl} ${repo ? '· ' + repo : ''}
           </div>
           <div class="meta">
-            schedule: <code>${esc(s.cron_spec || 'none')}</code> · next run: ${relFuture(s.next_run_at)} · ${s.post_count || 0} posts · last: ${fmtTime(s.last_post_at)}
+            ${scheduleMeta}
           </div>
           <div class="actions">
             <button class="btn small" data-open="${s.id}">Open</button>
@@ -219,12 +226,21 @@ async function renderDetail() {
     const theme = safeParse(site.theme_json);
     const siteUrl = site.site_url ? `<a href="${esc(site.site_url)}" target="_blank">${esc(site.site_url)}</a>` : '<span class="muted">pending</span>';
     const repo = site.repo_url ? `<a href="${esc(site.repo_url)}" target="_blank">${esc(site.repo_url)}</a>` : '<span class="muted">pending</span>';
+    const inBurst = Number(site.seed_burst_complete) === 0;
+    const postCount = Number(site.post_count || 0);
+    const burstBadge = inBurst
+      ? `<span class="tag" style="background:#fef3c7;color:#92400e;">seed burst: ${Math.min(postCount, 10)}/10</span>`
+      : '';
+    const scheduleBlock = inBurst
+      ? `<div class="muted" style="margin-top:8px;">Seed burst in progress: ${Math.min(postCount, 10)}/10 reviews. ${site.pending_burst_jobs || 0} jobs queued. Normal schedule resumes after burst completes.</div>`
+      : `<div class="muted" style="margin-top:8px;">next run: ${relFuture(site.next_run_at)}</div>`;
     $('detail').innerHTML = `
       <div class="panel">
         <div class="row">
           <h2 style="margin:0;">${esc(site.slug)}</h2>
           <span class="tag">${esc(site.product_category)}</span>
           <span class="tag">${esc(site.status)}</span>
+          ${burstBadge}
           <div class="spacer"></div>
           <button class="btn" id="gen-now">Generate now</button>
         </div>
@@ -249,7 +265,7 @@ async function renderDetail() {
           <button class="btn small" id="save-ratio">Save</button>
           <span class="muted">· counter: ${site.reviews_since_last_listicle || 0}/${site.listicle_ratio || 10}</span>
         </div>
-        <div class="muted" style="margin-top:8px;">next run: ${relFuture(site.next_run_at)}</div>
+        ${scheduleBlock}
       </div>
 
       <div class="panel">

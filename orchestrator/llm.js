@@ -132,25 +132,33 @@ Write the review and scoring now. Strict JSON only.`;
 export async function generateListicle({ category, reviews, existingListicles, targetItemCount }) {
   // reviews: array of { slug, product_name, final_score }
   // existingListicles: array of { title, slug }
-  const want = Math.max(3, Math.min(Number(targetItemCount) || 5, reviews.length));
-  const sys = `You are an editorial curator for a product review site. Your job: pick a compelling "Best X for Y" angle that groups a subset of already-reviewed products into a useful listicle.
+  // We want 5-15 items but never more than what's actually available. Floor
+  // is the lower of 5 or the total reviews (so a 3-review site can still
+  // produce something), ceiling is 15.
+  const floor = Math.min(5, reviews.length);
+  const cap = Math.min(15, reviews.length);
+  const hint = Math.max(floor, Math.min(Number(targetItemCount) || cap, cap));
+  const sys = `You are an editorial curator for a product review site. Your job: pick a compelling, specific angle and build a listicle around the SUBSET of reviewed products that genuinely fit that angle.
 
-Rules:
+The angle is everything. Think like a magazine editor assigning a feature: "Jamaican rums worth stocking", "Summer fragrances that don't scream", "Over-ear headphones under $300", "Japanese whiskies for beginners". The angle is a meaningful subcategory or theme — not a generic restatement of the site.
+
+HARD RULES:
 - Output strict JSON only. No prose before or after. No markdown fences.
-- Pick an angle that actually fits the products provided. Don't force it.
-- Choose between 3 and ${want} products from the provided list. ONLY use product slugs from the list below — do not invent products that don't exist.
-- Rank them deliberately (1 = best fit for the angle, not just the highest score).
-- Write a 2-3 sentence intro framing the angle. Write a 1-2 sentence outro.
-- Write a 1-2 sentence blurb per item explaining why this product fits the angle (not a generic restatement of the review).
-- Title should read naturally, like "The Best Perfumes for Winter" or "Five Bold Fragrances Worth the Investment".
-- Do not repeat a title/slug already used by this site.
-- Tone: measured, specific, editorial. Avoid hype words.
+- The angle MUST be a specific subcategory, use case, or theme. Generic titles like "Best Rums", "Top Fragrances", "Best Products We've Reviewed" are NOT allowed unless the site category is already that narrow.
+- Include between ${floor} and ${cap} products. Aim for roughly ${hint}, but pick based on fit to the angle, not on hitting a number. Do NOT include a product just because it's in the list — if it doesn't fit the angle, leave it out.
+- It is CORRECT and EXPECTED to exclude reviewed products that don't match the angle. A tight 5-item listicle with a sharp angle beats a 10-item grab bag.
+- ONLY use product slugs from the list below. Do not invent products or slugs that don't exist. Every "post_slug" in "selected" must appear verbatim in the provided list.
+- Rank deliberately: 1 = best fit for the angle (not necessarily highest review score).
+- Pick an angle this site has NOT already covered. Do not re-use or near-duplicate any existing listicle title, slug, or theme.
+- Intro: 2-3 sentences framing why these specific picks fit the angle. Outro: 1-2 sentences.
+- Per-item blurb: 1-2 sentences explaining why this specific product fits this specific angle (not a restatement of the review).
+- Tone: measured, specific, editorial. No hype words ("revolutionary", "must-have", "game-changing").
 
 Output shape:
 {
   "title": "string",
   "slug": "kebab-case-slug",
-  "angle": "one-line description of the angle",
+  "angle": "one-line description of the specific subcategory/theme",
   "intro_markdown": "string",
   "outro_markdown": "string",
   "selected": [
@@ -161,15 +169,16 @@ Output shape:
     .map((r) => `- ${r.product_name} (slug: ${r.slug}, score: ${r.final_score})`)
     .join('\n');
   const existing = existingListicles && existingListicles.length
-    ? `\n\nListicles that already exist on this site (avoid repeating these angles / slugs):\n${existingListicles.map((l) => `- ${l.title} (slug: ${l.slug})`).join('\n')}`
+    ? `\n\nListicles this site has already published (pick a DIFFERENT angle, not a rehash):\n${existingListicles.map((l) => `- ${l.title} (slug: ${l.slug})`).join('\n')}`
     : '';
   const user = `Site category: ${category}
-Target listicle length: aim for ${want} items (minimum 3).
+Total reviewed products available: ${reviews.length}
+Target length: between ${floor} and ${cap} items (aim for ~${hint}, but let the angle decide).
 
-Available reviewed products (use ONLY these slugs in "selected"):
+Available reviewed products (use ONLY these slugs in "selected", and only include the ones that genuinely fit your chosen angle):
 ${reviewList}${existing}
 
-Pick an angle, write the listicle. Strict JSON only.`;
+Pick a specific angle, write the listicle. Strict JSON only.`;
   const { text } = await completeWithFallback({
     system: sys,
     messages: [{ role: 'user', content: user }],
