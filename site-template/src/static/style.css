@@ -85,6 +85,10 @@ article.review .footer {
 .related-title { font-family: var(--font-serif); font-size: 15px; line-height: 1.3; margin-bottom: 6px; }
 .related-meta { display: flex; justify-content: flex-end; }
 .score-badge.small { width: 34px; height: 34px; font-size: 13px; }
+.type-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.type-badge--review { background: var(--accent-soft); color: var(--accent); }
+.type-badge--guide { background: var(--accent); color: var(--card); }
 
 .about h1 { font-family: var(--font-serif); font-size: 28px; }
 .about p { font-size: 17px; }

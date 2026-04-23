@@ -113,6 +113,12 @@ export default function (eleventyConfig) {
     c.getFilteredByGlob("src/listicles/*.md").sort((a, b) => b.date - a.date)
   );
 
+  eleventyConfig.addCollection("latestFeed", (c) => {
+    const reviews = c.getFilteredByGlob("src/posts/*.md");
+    const listicles = c.getFilteredByGlob("src/listicles/*.md");
+    return [...reviews, ...listicles].sort((a, b) => b.date - a.date);
+  });
+
   // Render a short markdown string to HTML (used for listicle blurbs/outro).
   eleventyConfig.addFilter("renderMd", (s) => {
     if (!s) return "";

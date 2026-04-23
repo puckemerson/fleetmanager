@@ -27,22 +27,29 @@ title: Home
 {% endif %}
 
 <section class="latest">
-  <h2>{% if collections.reviewsByScore.length > 2 %}Latest reviews{% else %}Reviews{% endif %}</h2>
+  <h2>Latest</h2>
   <div class="grid">
-  {% for review in collections.reviews %}
-    <a class="card" href="{{ review.url | url }}">
-      {% if review.data.image %}<img src="{{ review.data.image | url }}" alt="{{ review.data.product_name }}" loading="lazy" width="320" height="180">{% else %}<div class="card-placeholder"></div>{% endif %}
+  {% for item in collections.latestFeed %}
+    {% set isListicle = "listicle" in item.data.tags %}
+    {% set displayTitle = item.data.title if isListicle else item.data.product_name %}
+    <a class="card" href="{{ item.url | url }}">
+      {% if item.data.image %}<img src="{{ item.data.image | url }}" alt="{{ displayTitle }}" loading="lazy" width="320" height="180">{% else %}<div class="card-placeholder"></div>{% endif %}
       <div class="body">
-        <div class="title">{{ review.data.product_name }}</div>
+        <div class="title">{{ displayTitle }}</div>
         <div class="meta">
-          <span><time datetime="{{ review.date | date('iso') }}">{{ review.date | date }}</time></span>
-          <span class="score-badge">{{ review.data.final_score | round }}</span>
+          <span><time datetime="{{ item.date | date('iso') }}">{{ item.date | date }}</time></span>
+          {% if isListicle %}
+            <span class="type-badge type-badge--guide">Guide</span>
+          {% else %}
+            <span class="score-badge">{{ item.data.final_score | round }}</span>
+            <span class="type-badge type-badge--review">Review</span>
+          {% endif %}
         </div>
       </div>
     </a>
   {% endfor %}
-  {% if collections.reviews.length == 0 %}
-  <p style="grid-column: 1/-1; color: var(--muted); text-align:center; padding: 40px 0;">No reviews yet — the first one will appear here soon.</p>
+  {% if collections.latestFeed.length == 0 %}
+  <p style="grid-column: 1/-1; color: var(--muted); text-align:center; padding: 40px 0;">No content yet — the first one will appear here soon.</p>
   {% endif %}
   </div>
 </section>
