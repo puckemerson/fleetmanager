@@ -5,6 +5,11 @@ const REPLICATE_API = 'https://api.replicate.com/v1';
 // flux-dev supports img2img via the `image` input parameter
 const MODEL_VERSION = 'black-forest-labs/flux-dev';
 
+// Rate limit handling
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 1000;
+const MAX_BACKOFF_MS = 30000;
+
 /**
  * Restyle a product image using Replicate's flux-dev img2img.
  * @param {object} opts
@@ -14,39 +19,80 @@ const MODEL_VERSION = 'black-forest-labs/flux-dev';
  * @param {string} opts.apiKey - Replicate API key
  * @returns {Promise<Buffer>} Restyled image bytes
  */
-export async function restyleImage({ imageBuffer, productName, stylePrompt, apiKey }) {
+export async function restyleImage({ imageBuffer, productName, stylePrompt, apiKey, retryCount = 0 }) {
   // 1. Convert imageBuffer to base64 data URI
   const b64 = imageBuffer.toString('base64');
   const mimeType = detectMimeType(imageBuffer);
   const dataUri = `data:${mimeType};base64,${b64}`;
 
   const prompt = `Product photography of ${productName}, ${stylePrompt}, centered composition, clean background, no text, no watermarks`;
-  const negativePrompt = 'text, watermark, logo, blurry, distorted, multiple products';
 
-  // 2. POST to Replicate predictions API
-  const createRes = await fetch(`${REPLICATE_API}/models/${MODEL_VERSION}/predictions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      Prefer: 'wait',
-    },
-    body: JSON.stringify({
-      input: {
-        image: dataUri,
-        prompt,
-        negative_prompt: negativePrompt,
-        strength: 0.6,
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
-      },
-    }),
-    signal: AbortSignal.timeout(90000),
-  });
+  // 2. POST to Replicate predictions API with retry logic
+  let createRes;
+  let retryAfter = INITIAL_BACKOFF_MS;
+  let lastError = null;
 
-  if (!createRes.ok) {
-    const txt = await createRes.text().catch(() => '');
-    throw new Error(`Replicate create prediction ${createRes.status}: ${txt.slice(0, 300)}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      createRes = await fetch(`${REPLICATE_API}/models/${MODEL_VERSION}/predictions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          Prefer: 'wait',
+        },
+        body: JSON.stringify({
+          input: {
+            image: dataUri,
+            prompt,
+            prompt_strength: 0.6,
+            num_inference_steps: 28,
+            guidance: 3.5,
+            output_format: 'webp',
+            output_quality: 90,
+          },
+        }),
+        signal: AbortSignal.timeout(90000),
+      });
+
+      // Handle rate limiting (429) with exponential backoff
+      if (createRes.status === 429) {
+        const retryAfterHeader = createRes.headers.get('retry-after');
+        if (retryAfterHeader) {
+          retryAfter = Math.min(parseInt(retryAfterHeader) * 1000 + 1000, MAX_BACKOFF_MS);
+        } else {
+          retryAfter = Math.min(retryAfter * 2, MAX_BACKOFF_MS);
+        }
+
+        if (attempt < MAX_RETRIES) {
+          console.log(`[restyleImage] rate limited (429), retrying after ${retryAfter}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise((r) => setTimeout(r, retryAfter));
+          continue;
+        } else {
+          const txt = await createRes.text().catch(() => '');
+          throw new Error(`Rate limited (429): ${txt.slice(0, 200)}`);
+        }
+      }
+
+      // Other errors: fail immediately
+      if (!createRes.ok) {
+        const txt = await createRes.text().catch(() => '');
+        throw new Error(`Replicate create prediction ${createRes.status}: ${txt.slice(0, 300)}`);
+      }
+
+      // Success!
+      break;
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        console.log(`[restyleImage] attempt ${attempt + 1} failed: ${err.message}, retrying...`);
+        await new Promise((r) => setTimeout(r, Math.min(INITIAL_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS)));
+      }
+    }
+  }
+
+  if (!createRes) {
+    throw lastError || new Error('Replicate predictions API failed after all retries');
   }
 
   let prediction = await createRes.json();
