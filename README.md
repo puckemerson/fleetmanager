@@ -13,10 +13,10 @@ each auto-scaffolded, themed, and posted to on a schedule.
 ## Quickstart
 
 ```bash
-# Login to the dashboard
+# Login to the dashboard (password is the Worker secret DASHBOARD_PASSWORD_HASH, not in git)
 curl -s -c cookies.txt -X POST https://fleetmanager.puckemerson.workers.dev/api/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"will","password":"fleetmanager"}'
+  -d "{\"username\":\"will\",\"password\":\"$DASHBOARD_PASSWORD\"}"
 
 # Create a site
 curl -s -b cookies.txt -X POST https://fleetmanager.puckemerson.workers.dev/api/sites \
@@ -54,6 +54,13 @@ The dashboard Worker stores `DASHBOARD_PASSWORD_HASH` as a Cloudflare secret.
   systemctl --user status fleetmanager-orchestrator
   journalctl --user -u fleetmanager-orchestrator -f
   ```
+
+## Taskdeck
+
+- **Project ID**: 2
+- **Slug**: `fleetmanager`
+- **Health**: `https://fleetmanager.puckemerson.workers.dev/health` (requires deploying the Worker after the `/health` route lands)
+- **Taskdeck UI**: http://localhost:3117/#/projects/2
 
 ## Pipeline (per post)
 

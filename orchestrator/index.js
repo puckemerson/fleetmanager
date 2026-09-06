@@ -3,7 +3,7 @@
 import { CONFIG, requireSecrets } from './config.js';
 import { d1All, d1First, d1Run } from './d1.js';
 import { scaffoldSite } from './scaffold.js';
-import { generatePost } from './generate.js';
+import { generatePost, regeneratePostImage } from './generate.js';
 import { generateListicle } from './listicle.js';
 import { nextRunFrom } from './schedule.js';
 
@@ -195,6 +195,11 @@ async function tick() {
       if (job.kind === 'scaffold_site') result = await runScaffold(job, site);
       else if (job.kind === 'generate_post') result = await runGenerate(job, site);
       else if (job.kind === 'generate_listicle') result = await runGenerateListicle(job, site);
+      else if (String(job.kind || '').startsWith('regenerate_post_image:')) {
+        const postId = Number(String(job.kind).split(':')[1]);
+        if (!Number.isInteger(postId) || postId <= 0) throw new Error(`invalid post id in job kind: ${job.kind}`);
+        result = await regeneratePostImage({ site, postId });
+      }
       else throw new Error(`unknown job kind: ${job.kind}`);
       await finishJob(job.id, 'done', null, result);
       log(`[job ${job.id}] done`);

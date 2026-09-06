@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import simpleGit from 'simple-git';
 import { CONFIG } from './config.js';
-import { d1All } from './d1.js';
+import { d1All, d1Run } from './d1.js';
 import { proposeProducts, synthesizeReview } from './llm.js';
 import { searchWeb, fetchPage, extractPage, findProductImage } from './search.js';
 import { repoGitUrl } from './github.js';
@@ -109,26 +109,26 @@ export async function generatePost({ site }) {
   if (img) console.log(`[generate] image from ${img.sourceUrl} (${img.buffer.length} bytes)`);
   else console.log(`[generate] no image found; post will have placeholder`);
 
-  // 6a. Optionally restyle via Replicate img2img
-  if (img && CONFIG.REPLICATE_API_KEY && site.image_style_prompt) {
-    console.log(`[generate] restyling image via Replicate (style: ${site.image_style_prompt.slice(0, 60)}...)`);
+  // 6a. Restyle via Replicate img2img using site-specific prompt when present,
+  // otherwise a consistent global default to keep cross-site visuals unified.
+  const stylePrompt = site.image_style_prompt || CONFIG.DEFAULT_IMAGE_STYLE_PROMPT;
+  if (img && CONFIG.REPLICATE_API_KEY && stylePrompt) {
+    console.log(`[generate] restyling image via Replicate (style: ${stylePrompt.slice(0, 60)}...)`);
     try {
       const restyled = await restyleImage({
         imageBuffer: img.buffer,
         productName: product.name,
-        stylePrompt: site.image_style_prompt,
+        stylePrompt,
         apiKey: CONFIG.REPLICATE_API_KEY,
       });
       img.buffer = restyled;
-      img.contentType = 'image/webp'; // flux-dev typically outputs webp
+      img.contentType = 'image/png'; // nano-banana-pro outputs png/jpg; request png
       console.log(`[generate] Replicate restyle complete (${restyled.length} bytes)`);
     } catch (err) {
       console.log(`[generate] Replicate restyle failed, using raw scraped image: ${err.message}`);
     }
   } else if (!CONFIG.REPLICATE_API_KEY) {
     console.log(`[generate] REPLICATE_API_KEY not set, using raw scraped image`);
-  } else if (!site.image_style_prompt) {
-    console.log(`[generate] no image_style_prompt on site, using raw scraped image`);
   }
 
   // 7. Prepare repo clone
@@ -281,6 +281,54 @@ async function reconcileSiteConfig(workRepo, site) {
   if (before !== after) {
     await fsp.writeFile(cfgPath, JSON.stringify(merged, null, 2) + '\n');
   }
+}
+
+export async function regeneratePostImage({ site, postId }) {
+  const post = await d1All('SELECT * FROM posts WHERE id = ? AND site_id = ?', [postId, site.id]);
+  if (!post || post.length === 0) throw new Error(`post ${postId} not found for site ${site.id}`);
+  const p = post[0];
+
+  console.log(`[regen-image] site=${site.slug} post=${p.slug} product=${p.product_name}`);
+  const img = await findProductImage(p.product_name);
+  if (!img) throw new Error('no source image found for product');
+
+  const stylePrompt = site.image_style_prompt || CONFIG.DEFAULT_IMAGE_STYLE_PROMPT;
+  if (CONFIG.REPLICATE_API_KEY && stylePrompt) {
+    const restyled = await restyleImage({
+      imageBuffer: img.buffer,
+      productName: p.product_name,
+      stylePrompt,
+      apiKey: CONFIG.REPLICATE_API_KEY,
+    });
+    img.buffer = restyled;
+    img.contentType = 'image/png';
+  }
+
+  const workRepo = await ensureRepoClone(site.slug, site.repo_url);
+  const ext = guessExt(img.contentType);
+  const imageRef = `/images/${p.slug}${ext}`;
+  const outPath = path.join(workRepo, 'src', 'images', `${p.slug}${ext}`);
+  await fsp.mkdir(path.dirname(outPath), { recursive: true });
+  await fsp.writeFile(outPath, img.buffer);
+
+  const mdPath = path.join(workRepo, 'src', 'posts', `${p.slug}.md`);
+  let md = await fsp.readFile(mdPath, 'utf8');
+  md = md.replace(/^image:\s*.*$/m, `image: "${imageRef}"`);
+  md = md.replace(/^image_source:\s*.*$/m, `image_source: "${img.sourceUrl}"`);
+  await fsp.writeFile(mdPath, md);
+
+  const git = simpleGit(workRepo);
+  await git.addConfig('user.email', 'fleetmanager@puckemerson.com', false, 'local');
+  await git.addConfig('user.name', 'FleetManager Bot', false, 'local');
+  await git.add('.');
+  await git.commit(`Regenerate image: ${p.product_name}`);
+  await git.push('origin', 'main');
+  const lg = await git.log(['-1']);
+  const commitSha = lg?.latest?.hash || null;
+
+  await d1Run('UPDATE posts SET image_r2_key = ?, image_source_url = ?, commit_sha = ? WHERE id = ?', [imageRef, img.sourceUrl, commitSha, postId]);
+
+  return { post_id: postId, slug: p.slug, image: imageRef, image_source: img.sourceUrl, sha: commitSha };
 }
 
 function guessExt(ct) {

@@ -3,7 +3,7 @@
 
 const REPLICATE_API = 'https://api.replicate.com/v1';
 // flux-dev supports img2img via the `image` input parameter
-const MODEL_VERSION = 'black-forest-labs/flux-dev';
+const MODEL_VERSION = 'google/nano-banana-pro';
 
 // Rate limit handling
 const MAX_RETRIES = 3;
@@ -25,7 +25,7 @@ export async function restyleImage({ imageBuffer, productName, stylePrompt, apiK
   const mimeType = detectMimeType(imageBuffer);
   const dataUri = `data:${mimeType};base64,${b64}`;
 
-  const prompt = `Product photography of ${productName}, ${stylePrompt}, centered composition, clean background, no text, no watermarks`;
+  const prompt = `Product photography of ${productName}, ${stylePrompt}. Keep the bottle and label sharp and fully legible. Add rich environmental context with realistic props and texture. Avoid plain solid or near-solid backgrounds, avoid floating product look. No text or watermarks.`;
 
   // 2. POST to Replicate predictions API with retry logic
   let createRes;
@@ -45,10 +45,10 @@ export async function restyleImage({ imageBuffer, productName, stylePrompt, apiK
           input: {
             image: dataUri,
             prompt,
-            prompt_strength: 0.6,
-            num_inference_steps: 28,
-            guidance: 3.5,
-            output_format: 'webp',
+            prompt_strength: 0.72,
+            num_inference_steps: 30,
+            guidance: 4.5,
+            output_format: 'png',
             output_quality: 90,
           },
         }),

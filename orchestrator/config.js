@@ -33,6 +33,8 @@ export const CONFIG = {
   GITHUB_USER: process.env.GITHUB_USER || 'puckemerson',
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   REPLICATE_API_KEY: process.env.REPLICATE_API_KEY,
+  DEFAULT_IMAGE_STYLE_PROMPT: process.env.FLEETMANAGER_DEFAULT_IMAGE_STYLE_PROMPT
+    || 'premium editorial product photo with environmental context, realistic styled props, soft cinematic lighting, tactile materials, shallow depth of field, sharp product detail, sophisticated color contrast',
   LLM_MODEL: process.env.LLM_MODEL || 'claude-sonnet-4-5',
   WORK_DIR: process.env.FLEETMANAGER_WORK_DIR || '/tmp/fleetmanager-work',
   SITE_TEMPLATE_DIR: process.env.FLEETMANAGER_SITE_TEMPLATE

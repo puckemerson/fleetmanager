@@ -184,6 +184,21 @@ function showNewSiteForm() {
           <option value="+5m">+5m (test mode)</option>
         </select>
       </div>
+      <div class="form-row">
+        <label>Hosting provider</label>
+        <select name="hosting_provider">
+          <option value="github_pages">github_pages</option>
+          <option value="vercel">vercel</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Theme family</label>
+        <select name="theme_family">
+          <option value="eleventy_classic">eleventy_classic</option>
+          <option value="astro_magazine">astro_magazine</option>
+          <option value="hugo_minimal">hugo_minimal</option>
+        </select>
+      </div>
       <div class="row">
         <button type="submit" class="btn">Create site</button>
         <button type="button" class="btn secondary" id="cancel-new">Cancel</button>
@@ -201,6 +216,8 @@ function showNewSiteForm() {
       product_category: fd.get('product_category').toString().trim(),
       slug: fd.get('slug').toString().trim() || undefined,
       cron_spec: fd.get('cron_spec').toString(),
+      hosting_provider: fd.get('hosting_provider').toString(),
+      theme_family: fd.get('theme_family').toString(),
     };
     try {
       await api('/api/sites', { method: 'POST', body: JSON.stringify(body) });
@@ -247,6 +264,7 @@ async function renderDetail() {
         <hr>
         <div>Site: ${siteUrl}</div>
         <div>Repo: ${repo}</div>
+        <div>Hosting: <code>${esc(site.hosting_provider || 'github_pages')}</code> · Theme: <code>${esc(site.theme_family || 'eleventy_classic')}</code></div>
         <div class="row" style="margin-top: 10px;">
           <label>Schedule:</label>
           <select id="schedule">
@@ -264,6 +282,20 @@ async function renderDetail() {
           <input type="number" id="listicle-ratio" min="1" max="100" value="${site.listicle_ratio || 10}" style="width:80px;">
           <button class="btn small" id="save-ratio">Save</button>
           <span class="muted">· counter: ${site.reviews_since_last_listicle || 0}/${site.listicle_ratio || 10}</span>
+        </div>
+        <div class="row" style="margin-top: 10px; gap:8px;">
+          <label>Hosting:</label>
+          <select id="hosting-provider">
+            <option value="github_pages" ${site.hosting_provider==='github_pages'?'selected':''}>github_pages</option>
+            <option value="vercel" ${site.hosting_provider==='vercel'?'selected':''}>vercel</option>
+          </select>
+          <label>Theme:</label>
+          <select id="theme-family">
+            <option value="eleventy_classic" ${site.theme_family==='eleventy_classic'?'selected':''}>eleventy_classic</option>
+            <option value="astro_magazine" ${site.theme_family==='astro_magazine'?'selected':''}>astro_magazine</option>
+            <option value="hugo_minimal" ${site.theme_family==='hugo_minimal'?'selected':''}>hugo_minimal</option>
+          </select>
+          <button class="btn small" id="save-platform-theme">Save</button>
         </div>
         ${scheduleBlock}
       </div>
@@ -338,6 +370,15 @@ async function renderDetail() {
       try { await api(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({ listicle_ratio: v }) }); renderDetail(); }
       catch (err) { alert(err.message); }
     };
+    $('save-platform-theme').onclick = async () => {
+      try {
+        await api(`/api/sites/${site.id}`, { method: 'PATCH', body: JSON.stringify({
+          hosting_provider: $('hosting-provider').value,
+          theme_family: $('theme-family').value,
+        }) });
+        renderDetail();
+      } catch (err) { alert(err.message); }
+    };
     $('gen-listicle-now').onclick = async () => {
       const btn = $('gen-listicle-now');
       btn.disabled = true; btn.textContent = 'Queued…';
@@ -393,6 +434,14 @@ async function renderDetail() {
         if (body) body.innerHTML = `<div class="error">${esc(err.message)}</div>`;
       }
     })();
+    document.querySelectorAll('[data-regen-image]').forEach((btn) => btn.onclick = async () => {
+      if (!confirm('Regenerate image for this post?')) return;
+      btn.disabled = true; btn.textContent = 'Queued…';
+      try { await api(`/api/posts/${btn.dataset.regenImage}/regenerate-image`, { method: 'POST' }); btn.textContent = 'Queued ✓'; }
+      catch (err) { alert(err.message); btn.textContent = 'Regenerate image'; btn.disabled = false; }
+      setTimeout(() => renderDetail(), 1500);
+    });
+
     $('archive').onclick = async () => {
       if (!confirm('Archive this site? (Repo will remain.)')) return;
       try { await api(`/api/sites/${site.id}`, { method: 'DELETE' }); state.view = 'list'; render(); }
@@ -694,13 +743,16 @@ function renderImageStylePanel(site) {
 function postCard(p, site) {
   const cats = safeParse(p.category_scores_json);
   const postUrl = site.site_url ? `${site.site_url.replace(/\/$/, '')}/posts/${p.slug}/` : null;
-  const img = p.image_source_url ? `<img src="${esc(p.image_source_url)}" alt="">` : '';
+  const localImg = p.image_r2_key && site.site_url ? `${site.site_url.replace(/\/$/, '')}${p.image_r2_key}` : null;
+  const imgSrc = localImg || p.image_source_url || null;
+  const img = imgSrc ? `<img src="${esc(imgSrc)}" alt="">` : '';
   return `
     <div class="post">
       ${img}
       <div class="body">
         <div class="name">${esc(p.product_name)} <span class="score-badge">${p.final_score}</span></div>
         <div class="muted">${fmtTime(p.created_at)} · ${postUrl ? `<a href="${esc(postUrl)}" target="_blank">view</a>` : 'local'}</div>
+        <div style="margin-top:6px;"><button class="btn secondary small" data-regen-image="${p.id}">Regenerate image</button></div>
         <div class="muted" style="margin-top:4px;">${Array.isArray(cats) ? cats.map(c => `${esc(c.name)}: ${c.score}`).join(' · ') : ''}</div>
       </div>
     </div>

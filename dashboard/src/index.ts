@@ -89,6 +89,27 @@ async function requireAuth(c: any, next: any) {
   await next();
 }
 
+// --- Health (unauthenticated) ---
+
+app.get('/health', async (c) => {
+  const checks: Record<string, string> = {};
+
+  try {
+    await c.env.DB.prepare('SELECT 1').first();
+    checks.database = 'ok';
+  } catch {
+    checks.database = 'error';
+  }
+
+  const status = Object.values(checks).includes('error') ? 'unhealthy' : 'healthy';
+  return c.json({
+    status,
+    service: 'fleetmanager',
+    timestamp: Date.now(),
+    checks,
+  }, status === 'unhealthy' ? 503 : 200);
+});
+
 // --- Auth ---
 
 app.post('/api/login', async (c) => {
@@ -137,6 +158,12 @@ app.post('/api/sites', requireAuth, async (c) => {
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid json' }, 400); }
   const productCategory = (body?.product_category ?? '').toString().trim();
   const cronSpec = (body?.cron_spec ?? 'weekly').toString().trim();
+  const hostingProvider = (body?.hosting_provider ?? 'github_pages').toString().trim();
+  const themeFamily = (body?.theme_family ?? 'eleventy_classic').toString().trim();
+  const validHosting = ['github_pages', 'vercel'];
+  const validThemes = ['eleventy_classic', 'astro_magazine', 'hugo_minimal'];
+  if (!validHosting.includes(hostingProvider)) return c.json({ error: 'invalid hosting_provider' }, 400);
+  if (!validThemes.includes(themeFamily)) return c.json({ error: 'invalid theme_family' }, 400);
   let slug = (body?.slug ?? '').toString().trim();
   if (!productCategory || productCategory.length > 60) return c.json({ error: 'invalid product_category' }, 400);
   if (!slug) slug = slugify(productCategory) + '-' + Math.random().toString(36).slice(2, 6);
@@ -148,9 +175,9 @@ app.post('/api/sites', requireAuth, async (c) => {
 
   const now = nowMs();
   const res = await c.env.DB.prepare(
-    `INSERT INTO sites (slug, product_category, repo_url, site_url, theme_json, cron_spec, next_run_at, status, created_at)
-     VALUES (?, ?, '', '', '{}', ?, ?, 'active', ?)`
-  ).bind(slug, productCategory, cronSpec, now, now).run();
+    `INSERT INTO sites (slug, product_category, repo_url, site_url, theme_json, cron_spec, next_run_at, status, hosting_provider, theme_family, created_at)
+     VALUES (?, ?, '', '', '{}', ?, ?, 'active', ?, ?, ?)`
+  ).bind(slug, productCategory, cronSpec, now, hostingProvider, themeFamily, now).run();
 
   const siteId = Number(res.meta.last_row_id);
 
@@ -169,7 +196,7 @@ app.get('/api/sites/:id', requireAuth, async (c) => {
   const site = await c.env.DB.prepare('SELECT * FROM sites WHERE id = ?').bind(id).first<any>();
   if (!site) return c.json({ error: 'not found' }, 404);
   const posts = await c.env.DB.prepare(
-    'SELECT id, product_name, slug, final_score, category_scores_json, image_source_url, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 50'
+    'SELECT id, product_name, slug, final_score, category_scores_json, image_r2_key, image_source_url, created_at FROM posts WHERE site_id = ? ORDER BY created_at DESC LIMIT 50'
   ).bind(id).all();
   const jobs = await c.env.DB.prepare(
     'SELECT id, kind, status, scheduled_for, started_at, finished_at, error FROM jobs WHERE site_id = ? ORDER BY id DESC LIMIT 20'
@@ -195,6 +222,14 @@ app.patch('/api/sites/:id', requireAuth, async (c) => {
   const updates: string[] = [];
   const binds: any[] = [];
   if (typeof body.cron_spec === 'string') { updates.push('cron_spec = ?'); binds.push(body.cron_spec); }
+  if (typeof body.hosting_provider === 'string') {
+    if (!['github_pages', 'vercel'].includes(body.hosting_provider)) return c.json({ error: 'invalid hosting_provider' }, 400);
+    updates.push('hosting_provider = ?'); binds.push(body.hosting_provider);
+  }
+  if (typeof body.theme_family === 'string') {
+    if (!['eleventy_classic', 'astro_magazine', 'hugo_minimal'].includes(body.theme_family)) return c.json({ error: 'invalid theme_family' }, 400);
+    updates.push('theme_family = ?'); binds.push(body.theme_family);
+  }
   if (typeof body.status === 'string' && ['active', 'archived', 'paused'].includes(body.status)) {
     updates.push('status = ?'); binds.push(body.status);
   }
@@ -258,6 +293,17 @@ app.delete('/api/sites/:id', requireAuth, async (c) => {
   const existing = await c.env.DB.prepare('SELECT id FROM sites WHERE id = ?').bind(id).first();
   if (!existing) return c.json({ error: 'not found' }, 404);
   await c.env.DB.prepare("UPDATE sites SET status = 'archived', next_run_at = NULL WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+app.post('/api/posts/:postId/regenerate-image', requireAuth, async (c) => {
+  const postId = Number(c.req.param('postId'));
+  if (!Number.isInteger(postId) || postId <= 0) return c.json({ error: 'invalid post id' }, 400);
+  const post = await c.env.DB.prepare('SELECT id, site_id FROM posts WHERE id = ?').bind(postId).first<any>();
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  await c.env.DB.prepare(
+    `INSERT INTO jobs (site_id, kind, status, scheduled_for) VALUES (?, ?, 'queued', ?)`
+  ).bind(post.site_id, `regenerate_post_image:${postId}`, nowMs()).run();
   return c.json({ ok: true });
 });
 
